@@ -1,0 +1,2834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Cosmic Collision Simulator - Blender3D Style</title>
+    <style>
+        :root {
+            --glow-color: #ffdeb8;
+            --panel-bg: rgba(15, 18, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.2);
+            --text-primary: #e1e9ff;
+            --text-secondary: #a9bce2;
+            --accent-color: #8fa8ff;
+            --warning-color: #ff6b6b;
+            --success-color: #51cf66;
+            --mobile-panel-height: 40vh;
+        }
+
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #000005 0%, #0a0a15 50%, #000008 100%);
+            color: var(--text-primary);
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            touch-action: manipulation;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: crosshair;
+            transition: cursor 0.2s ease;
+        }
+
+        #renderCanvas.selection-mode {
+            cursor: pointer;
+        }
+
+        #renderCanvas.dragging {
+            cursor: grabbing;
+        }
+
+        /* Mobile-Optimized UI Container */
+        .mobile-ui-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: var(--mobile-panel-height);
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border-color);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .mobile-ui-container.collapsed {
+            transform: translateY(calc(100% - 50px));
+        }
+
+        .mobile-ui-header {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+
+        .mobile-ui-header h3 {
+            margin: 0;
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .mobile-collapse-btn {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 5px;
+            transition: transform 0.3s ease;
+        }
+
+        .mobile-collapse-btn.collapsed {
+            transform: rotate(180deg);
+        }
+
+        .mobile-ui-content {
+            height: calc(100% - 50px);
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        .mobile-tab-nav {
+            display: flex;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .mobile-tab-btn {
+            flex: 1;
+            padding: 12px 8px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }
+
+        .mobile-tab-btn.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+            background: rgba(143, 168, 255, 0.1);
+        }
+
+        .mobile-tab-content {
+            display: none;
+            padding: 15px;
+            height: calc(100% - 50px);
+            overflow-y: auto;
+        }
+
+        .mobile-tab-content.active {
+            display: block;
+        }
+
+        /* Compact Control Styles */
+        .compact-control-group {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .compact-control-group h4 {
+            margin: 0 0 10px 0;
+            font-size: 1em;
+            color: var(--accent-color);
+            border-bottom: 1px solid var(--accent-color);
+            padding-bottom: 5px;
+        }
+
+        .compact-control-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .compact-control-row label {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        .compact-control-row input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: linear-gradient(to right, var(--accent-color), rgba(143, 168, 255, 0.3));
+            height: 4px;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .compact-control-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .compact-control-row input[type="number"] {
+            width: 60px;
+            padding: 4px;
+            font-size: 0.8em;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color);
+            color: white;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .compact-button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .compact-button {
+            padding: 8px 12px;
+            font-size: 0.85em;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: linear-gradient(135deg, rgba(60, 70, 90, 0.8), rgba(40, 50, 70, 0.8));
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .compact-button:hover {
+            background: linear-gradient(135deg, rgba(80, 90, 110, 0.9), rgba(60, 70, 90, 0.9));
+            border-color: var(--accent-color);
+        }
+
+        .compact-button.primary {
+            background: linear-gradient(135deg, var(--success-color), #40c057);
+            border-color: #51cf66;
+        }
+
+        .compact-button.danger {
+            background: linear-gradient(135deg, var(--warning-color), #fa5252);
+            border-color: #ff6b6b;
+        }
+
+        .material-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin: 8px 0;
+        }
+
+        .material-option {
+            padding: 6px;
+            text-align: center;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75em;
+            transition: all 0.2s ease;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .material-option:hover {
+            border-color: var(--accent-color);
+            background: rgba(143, 168, 255, 0.1);
+        }
+
+        .material-option.selected {
+            border-color: var(--accent-color);
+            background: rgba(143, 168, 255, 0.2);
+            color: var(--accent-color);
+        }
+
+        /* Top Status Bar */
+        .status-bar {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            height: 40px;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            z-index: 900;
+            font-size: 0.85em;
+        }
+
+        .status-left {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .status-right {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .mode-indicator {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .mode-indicator.add {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .mode-indicator.select {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .stats-compact {
+            display: flex;
+            gap: 10px;
+            font-size: 0.8em;
+        }
+
+        .stat-compact {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stat-compact .value {
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        .stat-compact .label {
+            color: var(--text-secondary);
+            font-size: 0.7em;
+        }
+
+        /* Error/Log Display */
+        .log-container {
+            position: fixed;
+            top: 60px;
+            left: 10px;
+            right: 10px;
+            max-height: 100px;
+            background: rgba(255, 50, 50, 0.9);
+            color: white;
+            font-family: 'Courier New', monospace;
+            border-radius: 6px;
+            z-index: 1100;
+            display: none;
+            padding: 8px;
+            font-size: 0.75em;
+            overflow-y: auto;
+        }
+
+        /* Collision Analysis Panel */
+        .collision-preview {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .collision-preview h5 {
+            margin: 0 0 8px 0;
+            color: var(--accent-color);
+            font-size: 0.9em;
+        }
+
+        .trajectory-line {
+            height: 60px;
+            background: linear-gradient(45deg, 
+                rgba(143, 168, 255, 0.1) 0%, 
+                rgba(255, 107, 107, 0.1) 50%, 
+                rgba(143, 168, 255, 0.1) 100%);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 0.8em;
+            position: relative;
+        }
+
+        .collision-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .collision-stat {
+            text-align: center;
+            padding: 4px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+
+        .collision-stat .value {
+            font-weight: bold;
+            color: var(--accent-color);
+            font-size: 0.9em;
+        }
+
+        .collision-stat .label {
+            color: var(--text-secondary);
+            font-size: 0.7em;
+        }
+
+        /* Loading Screen */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #000005 0%, #0a0a15 50%, #000008 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            color: var(--text-primary);
+        }
+
+        .loading-spinner {
+            border: 4px solid rgba(143, 168, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid var(--accent-color);
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            :root {
+                --mobile-panel-height: 50vh;
+            }
+            
+            .status-bar {
+                font-size: 0.75em;
+                height: 35px;
+            }
+            
+            .mobile-tab-btn {
+                font-size: 0.8em;
+                padding: 10px 6px;
+            }
+        }
+
+        @media (orientation: landscape) and (max-height: 600px) {
+            :root {
+                --mobile-panel-height: 60vh;
+            }
+        }
+
+        /* High DPI Displays */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .compact-control-row input[type="range"]::-webkit-slider-thumb {
+                width: 20px;
+                height: 20px;
+            }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-spinner"></div>
+        <h2>Loading Enhanced Collision Simulator...</h2>
+        <p id="loading-status">Initializing libraries...</p>
+    </div>
+
+    <!-- Error/Log Container -->
+    <div id="log-container" class="log-container">
+        <div id="log-header" style="font-weight:bold;margin-bottom:5px;">Enhanced Simulation Log:</div>
+        <div id="log-content"></div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-left">
+            <div class="mode-indicator add" id="mode-indicator">Add Mode</div>
+            <button class="compact-button" id="toggle-mode-btn">Switch Mode</button>
+        </div>
+        <div class="status-right">
+            <div class="stats-compact">
+                <div class="stat-compact">
+                    <div class="value" id="fps-counter">60</div>
+                    <div class="label">FPS</div>
+                </div>
+                <div class="stat-compact">
+                    <div class="value" id="object-counter">0</div>
+                    <div class="label">Objects</div>
+                </div>
+                <div class="stat-compact">
+                    <div class="value" id="fragment-counter">0</div>
+                    <div class="label">Fragments</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Canvas -->
+    <canvas id="renderCanvas"></canvas>
+
+    <!-- Mobile-Optimized UI Container -->
+    <div class="mobile-ui-container" id="mobile-ui">
+        <div class="mobile-ui-header" onclick="toggleMobileUI()">
+            <h3>Enhanced Collision Controls</h3>
+            <button class="mobile-collapse-btn" id="mobile-collapse-btn">▼</button>
+        </div>
+        
+        <div class="mobile-ui-content">
+            <!-- Tab Navigation -->
+            <div class="mobile-tab-nav">
+                <button class="mobile-tab-btn active" onclick="switchTab('simulation')">Simulation</button>
+                <button class="mobile-tab-btn" onclick="switchTab('objects')">Objects</button>
+                <button class="mobile-tab-btn" onclick="switchTab('scenarios')">Scenarios</button>
+                <button class="mobile-tab-btn" onclick="switchTab('analysis')">Analysis</button>
+                <button class="mobile-tab-btn" onclick="switchTab('physics')">Physics</button>
+            </div>
+
+            <!-- Simulation Tab -->
+            <div class="mobile-tab-content active" id="simulation-tab">
+                <div class="compact-control-group">
+                    <h4>Simulation Control</h4>
+                    <div class="compact-button-group">
+                        <button class="compact-button primary" id="play-pause-button">Start Simulation</button>
+                        <button class="compact-button" id="reset-button">Reset</button>
+                        <button class="compact-button danger" id="quick-collision-btn">Quick Collision</button>
+                        <button class="compact-button" id="slow-motion-btn">Slow Motion</button>
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Time Scale:</label>
+                        <input type="range" id="time-scale" min="0.01" max="5" step="0.01" value="1">
+                        <input type="number" id="time-scale-value" min="0.01" max="5" step="0.01" value="1">
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Gravity:</label>
+                        <input type="range" id="gravity-scale" min="0" max="3" step="0.1" value="1">
+                        <input type="number" id="gravity-scale-value" min="0" max="3" step="0.1" value="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Objects Tab -->
+            <div class="mobile-tab-content" id="objects-tab">
+                <div class="compact-control-group">
+                    <h4>Material Selection</h4>
+                    <div class="material-grid">
+                        <div class="material-option selected" data-material="ROCK">Rock</div>
+                        <div class="material-option" data-material="METAL">Metal</div>
+                        <div class="material-option" data-material="ICE">Ice</div>
+                        <div class="material-option" data-material="CRYSTAL">Crystal</div>
+                        <div class="material-option" data-material="ORGANIC">Organic</div>
+                        <div class="material-option" data-material="PLASMA">Plasma</div>
+                    </div>
+                </div>
+                
+                <div class="compact-control-group">
+                    <h4>Object Properties</h4>
+                    <div class="compact-control-row">
+                        <label>Size:</label>
+                        <input type="range" id="object-size" min="5" max="100" value="30">
+                        <input type="number" id="object-size-value" min="5" max="100" value="30">
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Mass:</label>
+                        <input type="range" id="object-mass" min="10" max="1000" value="150">
+                        <input type="number" id="object-mass-value" min="10" max="1000" value="150">
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Velocity:</label>
+                        <input type="range" id="object-velocity" min="0" max="200" value="50">
+                        <input type="number" id="object-velocity-value" min="0" max="200" value="50">
+                    </div>
+                </div>
+
+                <div id="selected-object-info" class="compact-control-group" style="display: none;">
+                    <h4>Selected Object</h4>
+                    <div id="object-details"></div>
+                </div>
+            </div>
+
+            <!-- Scenarios Tab -->
+            <div class="mobile-tab-content" id="scenarios-tab">
+                <div class="compact-control-group">
+                    <h4>Collision Scenarios</h4>
+                    <select id="scenario-selector" style="width: 100%; padding: 8px; margin-bottom: 10px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); color: white; border-radius: 4px;">
+                        <option value="head-on-collision">Head-On Collision</option>
+                        <option value="glancing-blow">Glancing Blow</option>
+                        <option value="multi-body-collision">Multi-Body Collision</option>
+                        <option value="high-velocity-impact">High Velocity Impact</option>
+                        <option value="material-comparison">Material Comparison</option>
+                        <option value="asteroid-field">Asteroid Field</option>
+                        <option value="planetary-collision">Planetary Collision</option>
+                    </select>
+                    <button class="compact-button primary" id="load-scenario-btn" style="width: 100%;">Load Scenario</button>
+                </div>
+
+                <div class="collision-preview">
+                    <h5>Collision Preview</h5>
+                    <div class="trajectory-line" id="trajectory-preview">
+                        Select a scenario to preview collision
+                    </div>
+                    <div class="collision-stats">
+                        <div class="collision-stat">
+                            <div class="value" id="predicted-energy">0</div>
+                            <div class="label">Energy (GJ)</div>
+                        </div>
+                        <div class="collision-stat">
+                            <div class="value" id="predicted-fragments">0</div>
+                            <div class="label">Fragments</div>
+                        </div>
+                        <div class="collision-stat">
+                            <div class="value" id="collision-angle">0°</div>
+                            <div class="label">Angle</div>
+                        </div>
+                        <div class="collision-stat">
+                            <div class="value" id="time-to-impact">0s</div>
+                            <div class="label">Time to Impact</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Tab -->
+            <div class="mobile-tab-content" id="analysis-tab">
+                <div class="compact-control-group">
+                    <h4>Destruction Analytics</h4>
+                    <div class="collision-stats">
+                        <div class="collision-stat">
+                            <div class="value" id="total-impacts">0</div>
+                            <div class="label">Total Impacts</div>
+                        </div>
+                        <div class="collision-stat">
+                            <div class="value" id="total-fragments">0</div>
+                            <div class="label">Fragments Created</div>
+                        </div>
+                        <div class="collision-stat">
+                            <div class="value" id="total-energy-released">0</div>
+                            <div class="label">Energy Released (GJ)</div>
+                        </div>
+                        <div class="collision-stat">
+                            <div class="value" id="destruction-efficiency">0%</div>
+                            <div class="label">Efficiency</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="compact-control-group">
+                    <h4>Real-Time Analysis</h4>
+                    <div class="compact-control-row">
+                        <label>Kinetic Energy:</label>
+                        <span id="current-kinetic-energy" style="color: var(--accent-color); font-weight: bold;">0 GJ</span>
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Momentum:</label>
+                        <span id="current-momentum" style="color: var(--accent-color); font-weight: bold;">0 kg⋅m/s</span>
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Total Mass:</label>
+                        <span id="total-system-mass" style="color: var(--accent-color); font-weight: bold;">0 kg</span>
+                    </div>
+                </div>
+
+                <div class="compact-control-group">
+                    <h4>Fracture Analysis</h4>
+                    <div id="fracture-pattern-display" style="height: 60px; background: rgba(0,0,0,0.3); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 0.8em;">
+                        No active fracture patterns
+                    </div>
+                </div>
+            </div>
+
+            <!-- Physics Tab -->
+            <div class="mobile-tab-content" id="physics-tab">
+                <div class="compact-control-group">
+                    <h4>Physics Constants</h4>
+                    <div class="compact-control-row">
+                        <label>Restitution:</label>
+                        <input type="range" id="restitution" min="0" max="1" step="0.1" value="0.7">
+                        <input type="number" id="restitution-value" min="0" max="1" step="0.1" value="0.7">
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Friction:</label>
+                        <input type="range" id="friction" min="0" max="1" step="0.1" value="0.8">
+                        <input type="number" id="friction-value" min="0" max="1" step="0.1" value="0.8">
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Air Resistance:</label>
+                        <input type="range" id="air-resistance" min="0" max="0.1" step="0.01" value="0">
+                        <input type="number" id="air-resistance-value" min="0" max="0.1" step="0.01" value="0">
+                    </div>
+                </div>
+
+                <div class="compact-control-group">
+                    <h4>Destruction Parameters</h4>
+                    <div class="compact-control-row">
+                        <label>Fragment Count:</label>
+                        <input type="range" id="fragment-multiplier" min="0.5" max="3" step="0.1" value="1">
+                        <input type="number" id="fragment-multiplier-value" min="0.5" max="3" step="0.1" value="1">
+                    </div>
+                    <div class="compact-control-row">
+                        <label>Destruction Threshold:</label>
+                        <input type="range" id="destruction-threshold" min="10000" max="200000" step="5000" value="30000">
+                        <input type="number" id="destruction-threshold-value" min="10000" max="200000" step="5000" value="30000">
+                    </div>
+                </div>
+
+                <div class="compact-control-group">
+                    <h4>Advanced Settings</h4>
+                    <div class="compact-button-group">
+                        <button class="compact-button" id="conserve-momentum-btn">Momentum Conservation</button>
+                        <button class="compact-button" id="conserve-energy-btn">Energy Conservation</button>
+                        <button class="compact-button" id="realistic-materials-btn">Realistic Materials</button>
+                        <button class="compact-button" id="advanced-fracture-btn">Advanced Fracture</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Babylon.js Libraries -->
+    <script src="https://cdn.babylonjs.com/ammo.js"></script>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/postprocesses/babylonjs.postProcess.min.js"></script>
+    <script src="https://cdn.babylonjs.com/proceduralTextures/babylonjs.proceduralTextures.min.js"></script>
+
+    <script>
+        // Global Variables and State Management
+        let scene, camera, engine, glowLayer;
+        let celestialBodies = [];
+        let fragmentBodies = [];
+        let initialCelestialStates = {};
+        let simulationState = 'PAUSED';
+        let timeScale = 1.0;
+        let gravityScale = 1.0;
+        let selectedObject = null;
+        let selectedMaterial = null;
+        let isDragging = false;
+        let dragStartPosition = null;
+        let dragLine = null;
+        let velocityArrow = null;
+        let interactionMode = 'ADD';
+        let slowMotionMode = false;
+        let conserveMomentum = true;
+        let conserveEnergy = true;
+        let realisticMaterials = true;
+        let advancedFracture = true;
+        let currentScenario = null;
+        let trajectoryLines = [];
+
+        // Physics and Simulation Constants
+        const PHYSICS_CONSTANTS = {
+            G: 6.674e-11,
+            ENERGY_SCALE_FACTOR: 75000,
+            MIN_DESTRUCTION_ENERGY: 30000,
+            EXTREME_DESTRUCTION_ENERGY: 150000,
+            FRAGMENT_LIFETIME: 30000,
+            MAX_FRAGMENTS: 500,
+            COLLISION_DETECTION_RADIUS_MULTIPLIER: 1.2
+        };
+
+        // Enhanced Analytics System
+        let destructionStats = {
+            totalImpacts: 0,
+            fragmentsCreated: 0,
+            totalEnergyReleased: 0,
+            destructionEfficiency: 0,
+            largestFragmentation: 0,
+            collisionHistory: [],
+            materialInteractions: {}
+        };
+
+        // Performance Monitoring
+        let performanceMonitor = {
+            fps: 60,
+            objectCount: 0,
+            fragmentCount: 0,
+            lastFrameTime: 0,
+            averageFrameTime: 16.67,
+            memoryUsage: 0
+        };
+
+        // Enhanced Collision Detection System
+        let collisionDetection = {
+            activeCollisions: new Map(),
+            collisionPairs: new Set(),
+            lastCollisionCheck: 0,
+            collisionQueue: []
+        };
+
+        // Logging and Error Handling
+        const logContainer = document.getElementById('log-container');
+        const logContent = document.getElementById('log-content');
+        const loadingScreen = document.getElementById('loading-screen');
+        const loadingStatus = document.getElementById('loading-status');
+        let logBuffer = [];
+        let frameCount = 0;
+        let lastFPSUpdate = Date.now();
+
+        function updateLoadingStatus(message) {
+            if (loadingStatus) {
+                loadingStatus.textContent = message;
+            }
+            logToScreen(message, "info");
+        }
+
+        function hideLoadingScreen() {
+            if (loadingScreen) {
+                loadingScreen.style.display = 'none';
+            }
+        }
+
+        function logToScreen(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            logBuffer.push({message, type, timestamp: Date.now(), time: timestamp});
+            if (logBuffer.length > 100) logBuffer.shift();
+            
+            if (type === 'error') {
+                if (logContainer) logContainer.style.display = 'block';
+                console.error(`[${timestamp}] ${message}`);
+            } else {
+                console.log(`[${timestamp}] ${message}`);
+            }
+            
+            updateLogDisplay();
+        }
+
+        function updateLogDisplay() {
+            if (logContent && logBuffer.length > 0) {
+                const recent = logBuffer.slice(-15);
+                logContent.innerHTML = recent.map(entry => 
+                    `<div style="color:${entry.type === 'error' ? '#ff6b6b' : '#51cf66'}; margin-bottom: 2px;">
+                        [${entry.time}] ${entry.message}
+                    </div>`
+                ).join('');
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+        }
+
+        // Enhanced Material System with Scientific Properties
+        const MaterialTypes = {
+            ROCK: {
+                name: 'Rock',
+                density: 2700,
+                bulkModulus: 50e9,
+                shearModulus: 30e9,
+                tensileStrength: 100e6,
+                compressiveStrength: 300e6,
+                fracturePattern: 'angular',
+                color: '#8d6e63',
+                emissive: 0.0,
+                fragments: {min: 15, max: 40},
+                ductility: 0.1,
+                thermalConductivity: 2.5,
+                specificHeat: 840,
+                meltingPoint: 1800
+            },
+            METAL: {
+                name: 'Metal',
+                density: 7800,
+                bulkModulus: 160e9,
+                shearModulus: 80e9,
+                tensileStrength: 400e6,
+                compressiveStrength: 600e6,
+                fracturePattern: 'sheared',
+                color: '#90a4ae',
+                emissive: 0.1,
+                fragments: {min: 8, max: 25},
+                ductility: 0.7,
+                thermalConductivity: 50,
+                specificHeat: 460,
+                meltingPoint: 1800
+            },
+            ICE: {
+                name: 'Ice',
+                density: 917,
+                bulkModulus: 9e9,
+                shearModulus: 3.5e9,
+                tensileStrength: 3e6,
+                compressiveStrength: 25e6,
+                fracturePattern: 'crystalline',
+                color: '#b3e5fc',
+                emissive: 0.2,
+                fragments: {min: 20, max: 60},
+                ductility: 0.05,
+                thermalConductivity: 2.2,
+                specificHeat: 2100,
+                meltingPoint: 273
+            },
+            CRYSTAL: {
+                name: 'Crystal',
+                density: 2300,
+                bulkModulus: 70e9,
+                shearModulus: 45e9,
+                tensileStrength: 150e6,
+                compressiveStrength: 400e6,
+                fracturePattern: 'geometric',
+                color: '#e1bee7',
+                emissive: 0.3,
+                fragments: {min: 12, max: 35},
+                ductility: 0.02,
+                thermalConductivity: 1.5,
+                specificHeat: 700,
+                meltingPoint: 2000
+            },
+            ORGANIC: {
+                name: 'Organic',
+                density: 1200,
+                bulkModulus: 2e9,
+                shearModulus: 0.8e9,
+                tensileStrength: 50e6,
+                compressiveStrength: 80e6,
+                fracturePattern: 'fibrous',
+                color: '#8bc34a',
+                emissive: 0.05,
+                fragments: {min: 25, max: 50},
+                ductility: 0.5,
+                thermalConductivity: 0.5,
+                specificHeat: 1800,
+                meltingPoint: 600
+            },
+            PLASMA: {
+                name: 'Plasma',
+                density: 1,
+                bulkModulus: 1e6,
+                shearModulus: 0,
+                tensileStrength: 0,
+                compressiveStrength: 1e6,
+                fracturePattern: 'fluid',
+                color: '#ff5722',
+                emissive: 0.8,
+                fragments: {min: 50, max: 100},
+                ductility: 1.0,
+                thermalConductivity: 1000,
+                specificHeat: 5200,
+                meltingPoint: 10000
+            }
+        };
+
+        // Set default material
+        selectedMaterial = MaterialTypes.ROCK;
+
+        // Advanced Physics Calculation System
+        class PhysicsCalculator {
+            static calculateKineticEnergy(mass, velocity) {
+                return 0.5 * mass * velocity.lengthSquared();
+            }
+
+            static calculateMomentum(mass, velocity) {
+                return velocity.scale(mass);
+            }
+
+            static calculateCollisionEnergy(body1, body2) {
+                const v1 = body1.physicsImpostor ? body1.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+                const v2 = body2.physicsImpostor ? body2.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+                const m1 = body1.initialParams.mass;
+                const m2 = body2.initialParams.mass;
+                
+                const relativeVelocity = v1.subtract(v2);
+                const reducedMass = (m1 * m2) / (m1 + m2);
+                
+                return 0.5 * reducedMass * relativeVelocity.lengthSquared();
+            }
+
+            static calculateImpactAngle(body1, body2) {
+                const v1 = body1.physicsImpostor ? body1.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+                const v2 = body2.physicsImpostor ? body2.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+                const relativeVelocity = v1.subtract(v2);
+                const collisionNormal = body1.position.subtract(body2.position).normalize();
+                
+                const dotProduct = BABYLON.Vector3.Dot(relativeVelocity.normalize(), collisionNormal);
+                return Math.acos(Math.abs(dotProduct)) * (180 / Math.PI);
+            }
+
+            static predictCollisionTime(body1, body2) {
+                const v1 = body1.physicsImpostor ? body1.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+                const v2 = body2.physicsImpostor ? body2.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+                const p1 = body1.position;
+                const p2 = body2.position;
+                const r1 = body1.initialParams.size;
+                const r2 = body2.initialParams.size;
+                
+                const relativeVelocity = v1.subtract(v2);
+                const relativePosition = p1.subtract(p2);
+                const combinedRadius = r1 + r2;
+                
+                const a = relativeVelocity.lengthSquared();
+                const b = 2 * BABYLON.Vector3.Dot(relativePosition, relativeVelocity);
+                const c = relativePosition.lengthSquared() - combinedRadius * combinedRadius;
+                
+                const discriminant = b * b - 4 * a * c;
+                
+                if (discriminant < 0 || a === 0) return Infinity;
+                
+                const t1 = (-b - Math.sqrt(discriminant)) / (2 * a);
+                const t2 = (-b + Math.sqrt(discriminant)) / (2 * a);
+                
+                const validTime = t1 > 0 ? t1 : (t2 > 0 ? t2 : Infinity);
+                return validTime > 0 ? validTime : Infinity;
+            }
+
+            static calculateFragmentationPrediction(material, energy) {
+                const baseFragments = (material.fragments.min + material.fragments.max) / 2;
+                const energyFactor = Math.log10(energy / PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY + 1);
+                const materialFactor = (1 - material.ductility) * 2;
+                
+                return Math.round(baseFragments * energyFactor * materialFactor);
+            }
+        }
+
+        // Enhanced Fracture Engine with Scientific Accuracy
+        class AdvancedFractureEngine {
+            static generateVoronoiPattern(center, size, material, energy) {
+                const basePoints = material.fragments.min + 
+                    Math.random() * (material.fragments.max - material.fragments.min);
+                
+                const energyMultiplier = Math.max(1, Math.log10(energy / PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY + 1));
+                const fragmentMultiplier = parseFloat(document.getElementById('fragment-multiplier')?.value || 1);
+                const numPoints = Math.min(
+                    PHYSICS_CONSTANTS.MAX_FRAGMENTS / 2,
+                    Math.round(basePoints * energyMultiplier * fragmentMultiplier)
+                );
+                
+                const points = [];
+                for (let i = 0; i < numPoints; i++) {
+                    const randomOffset = this.generateMaterialSpecificOffset(material, size);
+                    points.push({
+                        x: center.x + randomOffset.x,
+                        y: center.y + randomOffset.y,
+                        z: center.z + randomOffset.z,
+                        id: i,
+                        energy: energy / numPoints,
+                        material: material
+                    });
+                }
+                return points;
+            }
+
+            static generateMaterialSpecificOffset(material, size) {
+                const scale = size * 1.5;
+                switch (material.fracturePattern) {
+                    case 'angular':
+                        return new BABYLON.Vector3(
+                            (Math.random() - 0.5) * scale,
+                            (Math.random() - 0.5) * scale,
+                            (Math.random() - 0.5) * scale
+                        );
+                    case 'crystalline':
+                        const angle = Math.random() * Math.PI * 2;
+                        const radius = Math.random() * scale;
+                        return new BABYLON.Vector3(
+                            radius * Math.cos(angle),
+                            (Math.random() - 0.5) * scale * 0.5,
+                            radius * Math.sin(angle)
+                        );
+                    case 'geometric':
+                        const phi = Math.random() * Math.PI;
+                        const theta = Math.random() * Math.PI * 2;
+                        const r = Math.random() * scale;
+                        return new BABYLON.Vector3(
+                            r * Math.sin(phi) * Math.cos(theta),
+                            r * Math.sin(phi) * Math.sin(theta),
+                            r * Math.cos(phi)
+                        );
+                    default:
+                        return new BABYLON.Vector3(
+                            (Math.random() - 0.5) * scale,
+                            (Math.random() - 0.5) * scale,
+                            (Math.random() - 0.5) * scale
+                        );
+                }
+            }
+
+            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy) {
+                if (!scene) {
+                    logToScreen("Error: Scene not available in createRealisticFragment", "error");
+                    return null;
+                }
+
+                try {
+                    const originalSize = originalMesh.initialParams.size;
+                    const energyRatio = voronoiPoint.energy / totalEnergy;
+                    const sizeReduction = 0.2 + energyRatio * 0.6;
+                    const fragmentSize = originalSize * sizeReduction * (0.5 + Math.random() * 0.5);
+                    
+                    let fragmentMesh = this.createMaterialSpecificFragment(fragmentSize, material, fragmentIndex);
+                    
+                    if (!fragmentMesh) {
+                        fragmentMesh = this.createFallbackFragment(fragmentSize, fragmentIndex);
+                    }
+                    
+                    if (fragmentMesh) {
+                        fragmentMesh.position = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z);
+                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, energyRatio);
+                        
+                        const fragmentMass = originalMesh.initialParams.mass * energyRatio * 0.1;
+                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy);
+                        
+                        fragmentMesh.initialParams = {
+                            name: 'fragment',
+                            size: fragmentSize,
+                            mass: fragmentMass,
+                            position: new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z),
+                            velocity: BABYLON.Vector3.Zero(),
+                            material: material,
+                            parentMesh: originalMesh,
+                            energy: voronoiPoint.energy,
+                            creationTime: Date.now()
+                        };
+                        
+                        fragmentBodies.push(fragmentMesh);
+                        
+                        setTimeout(() => this.cleanupFragment(fragmentMesh), PHYSICS_CONSTANTS.FRAGMENT_LIFETIME);
+                    }
+                    
+                    return fragmentMesh;
+                } catch (error) {
+                    logToScreen(`Error creating fragment: ${error.message}`, "error");
+                    return null;
+                }
+            }
+
+            static createMaterialSpecificFragment(size, material, index) {
+                const fragmentName = `fragment_${material.name}_${index}_${Date.now()}`;
+                
+                try {
+                    switch (material.fracturePattern) {
+                        case 'angular':
+                            return this.createAngularFragment(fragmentName, size);
+                        case 'crystalline':
+                            return this.createCrystallineFragment(fragmentName, size);
+                        case 'geometric':
+                            return this.createGeometricFragment(fragmentName, size);
+                        case 'sheared':
+                            return this.createShearedFragment(fragmentName, size);
+                        case 'fibrous':
+                            return this.createFibrousFragment(fragmentName, size);
+                        case 'fluid':
+                            return this.createFluidFragment(fragmentName, size);
+                        default:
+                            return this.createGenericFragment(fragmentName, size);
+                    }
+                } catch (error) {
+                    logToScreen(`Error creating ${material.fracturePattern} fragment: ${error.message}`, "error");
+                    return this.createFallbackFragment(size, index);
+                }
+            }
+
+            static createAngularFragment(name, size) {
+                const irregularity = 0.3 + Math.random() * 0.4;
+                return BABYLON.MeshBuilder.CreateBox(name, {
+                    width: size * (0.6 + Math.random() * 0.8),
+                    height: size * (0.6 + Math.random() * 0.8),
+                    depth: size * (0.6 + Math.random() * 0.8)
+                }, scene);
+            }
+
+            static createCrystallineFragment(name, size) {
+                const sides = 6 + Math.floor(Math.random() * 6);
+                return BABYLON.MeshBuilder.CreateCylinder(name, {
+                    height: size * (0.8 + Math.random() * 1.2),
+                    diameterTop: size * (0.2 + Math.random() * 0.3),
+                    diameterBottom: size * (0.4 + Math.random() * 0.4),
+                    tessellation: sides
+                }, scene);
+            }
+
+            static createGeometricFragment(name, size) {
+                const shapes = ['Box', 'Sphere', 'Cylinder'];
+                const shapeType = shapes[Math.floor(Math.random() * shapes.length)];
+                
+                switch (shapeType) {
+                    case 'Box':
+                        return BABYLON.MeshBuilder.CreateBox(name, {
+                            width: size * (0.4 + Math.random() * 0.6),
+                            height: size * (0.4 + Math.random() * 0.6),
+                            depth: size * (0.4 + Math.random() * 0.6)
+                        }, scene);
+                    case 'Cylinder':
+                        return BABYLON.MeshBuilder.CreateCylinder(name, {
+                            height: size * (0.6 + Math.random() * 0.8),
+                            diameter: size * (0.5 + Math.random() * 0.3),
+                            tessellation: 8 + Math.floor(Math.random() * 8)
+                        }, scene);
+                    default:
+                        return BABYLON.MeshBuilder.CreateSphere(name, {
+                            diameter: size * (0.6 + Math.random() * 0.8),
+                            segments: 8 + Math.floor(Math.random() * 8)
+                        }, scene);
+                }
+            }
+
+            static createShearedFragment(name, size) {
+                const fragment = BABYLON.MeshBuilder.CreateBox(name, {
+                    width: size * (0.2 + Math.random() * 0.6),
+                    height: size * (0.6 + Math.random() * 0.8),
+                    depth: size * (0.3 + Math.random() * 0.5)
+                }, scene);
+                
+                fragment.rotation.x = (Math.random() - 0.5) * 0.8;
+                fragment.rotation.z = (Math.random() - 0.5) * 0.8;
+                return fragment;
+            }
+
+            static createFibrousFragment(name, size) {
+                return BABYLON.MeshBuilder.CreateCylinder(name, {
+                    height: size * (1.5 + Math.random() * 2),
+                    diameter: size * (0.1 + Math.random() * 0.2),
+                    tessellation: 6
+                }, scene);
+            }
+
+            static createFluidFragment(name, size) {
+                const fragment = BABYLON.MeshBuilder.CreateSphere(name, {
+                    diameter: size * (0.3 + Math.random() * 0.4),
+                    segments: 6
+                }, scene);
+                
+                const positions = fragment.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] += (Math.random() - 0.5) * size * 0.1;
+                    positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
+                    positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                }
+                fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+                
+                return fragment;
+            }
+
+            static createGenericFragment(name, size) {
+                return BABYLON.MeshBuilder.CreateSphere(name, {
+                    diameter: size * (0.5 + Math.random() * 0.5),
+                    segments: 8
+                }, scene);
+            }
+
+            static createFallbackFragment(size, index) {
+                try {
+                    const fragment = BABYLON.MeshBuilder.CreateSphere(`fallback_fragment_${index}`, {
+                        diameter: size,
+                        segments: 6
+                    }, scene);
+                    return fragment;
+                } catch (error) {
+                    logToScreen(`Error creating fallback fragment: ${error.message}`, "error");
+                    return null;
+                }
+            }
+
+            static createEnhancedFragmentMaterial(material, index, energyRatio) {
+                if (!scene) return null;
+                
+                try {
+                    const fragmentMat = new BABYLON.StandardMaterial(`fragment_mat_${index}`, scene);
+                    
+                    const baseColor = BABYLON.Color3.FromHexString(material.color);
+                    const heatVariation = energyRatio * 0.5;
+                    const randomVariation = 0.2;
+                    
+                    fragmentMat.diffuseColor = new BABYLON.Color3(
+                        Math.max(0, Math.min(1, baseColor.r + heatVariation + (Math.random() - 0.5) * randomVariation)),
+                        Math.max(0, Math.min(1, baseColor.g + (Math.random() - 0.5) * randomVariation)),
+                        Math.max(0, Math.min(1, baseColor.b + (Math.random() - 0.5) * randomVariation))
+                    );
+                    
+                    fragmentMat.emissiveColor = fragmentMat.diffuseColor.scale(material.emissive + heatVariation * 0.3);
+                    fragmentMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                    
+                    return fragmentMat;
+                } catch (error) {
+                    logToScreen(`Error creating fragment material: ${error.message}`, "error");
+                    return null;
+                }
+            }
+
+            static setupFragmentPhysics(fragment, mass, material, energy) {
+                try {
+                    fragment.physicsImpostor = new BABYLON.PhysicsImpostor(
+                        fragment,
+                        BABYLON.PhysicsImpostor.SphereImpostor,
+                        {
+                            mass: mass,
+                            restitution: 0.3 + material.ductility * 0.4,
+                            friction: 0.6 + material.ductility * 0.3
+                        },
+                        scene
+                    );
+                    
+                    const explosionDirection = new BABYLON.Vector3(
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2
+                    ).normalize();
+                    
+                    const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
+                    fragment.physicsImpostor.setLinearVelocity(explosionDirection.scale(explosionSpeed));
+                    
+                    const angularVelocity = new BABYLON.Vector3(
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10
+                    );
+                    fragment.physicsImpostor.setAngularVelocity(angularVelocity);
+                    
+                } catch (error) {
+                    logToScreen(`Error setting up fragment physics: ${error.message}`, "error");
+                }
+            }
+
+            static cleanupFragment(fragment) {
+                try {
+                    if (fragment && !fragment.isDisposed()) {
+                        const index = fragmentBodies.indexOf(fragment);
+                        if (index > -1) {
+                            fragmentBodies.splice(index, 1);
+                        }
+                        
+                        if (fragment.physicsImpostor) {
+                            fragment.physicsImpostor.dispose();
+                        }
+                        
+                        fragment.dispose();
+                    }
+                } catch (error) {
+                    logToScreen(`Error cleaning up fragment: ${error.message}`, "error");
+                }
+            }
+        }
+
+        // Enhanced Collision Detection and Response System
+        class CollisionSystem {
+            static detectCollisions() {
+                const currentTime = Date.now();
+                if (currentTime - collisionDetection.lastCollisionCheck < 16) return;
+                
+                collisionDetection.lastCollisionCheck = currentTime;
+                
+                for (let i = 0; i < celestialBodies.length; i++) {
+                    for (let j = i + 1; j < celestialBodies.length; j++) {
+                        const body1 = celestialBodies[i];
+                        const body2 = celestialBodies[j];
+                        
+                        if (this.areColliding(body1, body2)) {
+                            const pairKey = `${body1.id}-${body2.id}`;
+                            if (!collisionDetection.activeCollisions.has(pairKey)) {
+                                this.handleCollision(body1, body2);
+                                collisionDetection.activeCollisions.set(pairKey, currentTime);
+                            }
+                        }
+                    }
+                }
+                
+                for (const [key, time] of collisionDetection.activeCollisions) {
+                    if (currentTime - time > 1000) {
+                        collisionDetection.activeCollisions.delete(key);
+                    }
+                }
+            }
+
+            static areColliding(body1, body2) {
+                const distance = BABYLON.Vector3.Distance(body1.position, body2.position);
+                const minDistance = (body1.initialParams.size + body2.initialParams.size) * 
+                    PHYSICS_CONSTANTS.COLLISION_DETECTION_RADIUS_MULTIPLIER;
+                
+                return distance <= minDistance;
+            }
+
+            static handleCollision(body1, body2) {
+                try {
+                    logToScreen(`Collision detected between ${body1.initialParams.name} and ${body2.initialParams.name}`, "info");
+                    
+                    const collisionEnergy = PhysicsCalculator.calculateCollisionEnergy(body1, body2);
+                    const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2);
+                    
+                    destructionStats.totalImpacts++;
+                    destructionStats.totalEnergyReleased += collisionEnergy;
+                    
+                    destructionStats.collisionHistory.push({
+                        time: Date.now(),
+                        objects: [body1.initialParams.name, body2.initialParams.name],
+                        energy: collisionEnergy,
+                        angle: impactAngle,
+                        materials: [body1.initialParams.material.name, body2.initialParams.material.name]
+                    });
+                    
+                    const materialPair = [body1.initialParams.material.name, body2.initialParams.material.name].sort().join('-');
+                    if (!destructionStats.materialInteractions[materialPair]) {
+                        destructionStats.materialInteractions[materialPair] = { count: 0, totalEnergy: 0 };
+                    }
+                    destructionStats.materialInteractions[materialPair].count++;
+                    destructionStats.materialInteractions[materialPair].totalEnergy += collisionEnergy;
+                    
+                    const shouldFragment1 = this.shouldObjectFragment(body1, collisionEnergy);
+                    const shouldFragment2 = this.shouldObjectFragment(body2, collisionEnergy);
+                    
+                    if (shouldFragment1) {
+                        this.fragmentObject(body1, collisionEnergy, body2);
+                    }
+                    
+                    if (shouldFragment2) {
+                        this.fragmentObject(body2, collisionEnergy, body1);
+                    }
+                    
+                    if (!shouldFragment1 && !shouldFragment2) {
+                        this.applyCollisionResponse(body1, body2, collisionEnergy);
+                    }
+                    
+                    this.createCollisionEffects(body1, body2, collisionEnergy);
+                    
+                    updateDestructionStats();
+                    updateRealTimeAnalysis();
+                    
+                } catch (error) {
+                    logToScreen(`Error handling collision: ${error.message}`, "error");
+                }
+            }
+
+            static shouldObjectFragment(body, energy) {
+                const material = body.initialParams.material;
+                const destructionThreshold = parseFloat(document.getElementById('destruction-threshold')?.value || PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY);
+                
+                const materialResistance = material.tensileStrength * material.ductility;
+                const adjustedThreshold = destructionThreshold * (materialResistance / 100e6);
+                
+                return energy > adjustedThreshold;
+            }
+
+            static fragmentObject(body, energy, impactorBody) {
+                try {
+                    const material = body.initialParams.material;
+                    const fragmentationCenter = body.position.clone();
+                    
+                    const voronoiPoints = AdvancedFractureEngine.generateVoronoiPattern(
+                        fragmentationCenter, 
+                        body.initialParams.size, 
+                        material, 
+                        energy
+                    );
+                    
+                    let fragmentCount = 0;
+                    voronoiPoints.forEach((point, index) => {
+                        if (fragmentBodies.length < PHYSICS_CONSTANTS.MAX_FRAGMENTS) {
+                            const fragment = AdvancedFractureEngine.createRealisticFragment(
+                                body, point, material, index, energy
+                            );
+                            if (fragment) {
+                                fragmentCount++;
+                            }
+                        }
+                    });
+                    
+                    destructionStats.fragmentsCreated += fragmentCount;
+                    if (fragmentCount > destructionStats.largestFragmentation) {
+                        destructionStats.largestFragmentation = fragmentCount;
+                    }
+                    
+                    this.removeBody(body);
+                    
+                    logToScreen(`${body.initialParams.name} fragmented into ${fragmentCount} pieces`, "info");
+                    
+                } catch (error) {
+                    logToScreen(`Error fragmenting object: ${error.message}`, "error");
+                }
+            }
+
+            static applyCollisionResponse(body1, body2, energy) {
+                if (!body1.physicsImpostor || !body2.physicsImpostor) return;
+                
+                try {
+                    const m1 = body1.initialParams.mass;
+                    const m2 = body2.initialParams.mass;
+                    const v1 = body1.physicsImpostor.getLinearVelocity();
+                    const v2 = body2.physicsImpostor.getLinearVelocity();
+                    
+                    const normal = body1.position.subtract(body2.position).normalize();
+                    const relativeVelocity = v1.subtract(v2);
+                    const velocityAlongNormal = BABYLON.Vector3.Dot(relativeVelocity, normal);
+                    
+                    if (velocityAlongNormal > 0) return;
+                    
+                    const restitution = parseFloat(document.getElementById('restitution')?.value || 0.7);
+                    const impulseScalar = -(1 + restitution) * velocityAlongNormal / (1/m1 + 1/m2);
+                    
+                    const impulse = normal.scale(impulseScalar);
+                    body1.physicsImpostor.setLinearVelocity(v1.add(impulse.scale(1/m1)));
+                    body2.physicsImpostor.setLinearVelocity(v2.subtract(impulse.scale(1/m2)));
+                    
+                    const overlap = (body1.initialParams.size + body2.initialParams.size) - 
+                        BABYLON.Vector3.Distance(body1.position, body2.position);
+                    
+                    if (overlap > 0) {
+                        const separation = normal.scale(overlap * 0.5);
+                        body1.position = body1.position.add(separation);
+                        body2.position = body2.position.subtract(separation);
+                    }
+                    
+                } catch (error) {
+                    logToScreen(`Error applying collision response: ${error.message}`, "error");
+                }
+            }
+
+            static createCollisionEffects(body1, body2, energy) {
+                try {
+                    const collisionPoint = body1.position.add(body2.position).scale(0.5);
+                    
+                    const flashLight = new BABYLON.PointLight("collisionFlash", collisionPoint, scene);
+                    flashLight.intensity = Math.min(10, energy / 10000);
+                    flashLight.diffuse = new BABYLON.Color3(1, 0.8, 0.4);
+                    
+                    BABYLON.Animation.CreateAndStartAnimation(
+                        "flashFade", flashLight, "intensity", 60, 30, 
+                        flashLight.intensity, 0, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                    );
+                    
+                    setTimeout(() => {
+                        flashLight.dispose();
+                    }, 500);
+                    
+                } catch (error) {
+                    logToScreen(`Error creating collision effects: ${error.message}`, "error");
+                }
+            }
+
+            static removeBody(body) {
+                try {
+                    const index = celestialBodies.indexOf(body);
+                    if (index > -1) {
+                        celestialBodies.splice(index, 1);
+                    }
+                    
+                    if (body.physicsImpostor) {
+                        body.physicsImpostor.dispose();
+                    }
+                    
+                    body.dispose();
+                } catch (error) {
+                    logToScreen(`Error removing body: ${error.message}`, "error");
+                }
+            }
+        }
+
+        // Performance and Monitoring System
+        function updatePerformanceMonitor() {
+            const now = Date.now();
+            frameCount++;
+            
+            if (now - lastFPSUpdate > 1000) {
+                performanceMonitor.fps = Math.round(frameCount * 1000 / (now - lastFPSUpdate));
+                performanceMonitor.objectCount = celestialBodies.length;
+                performanceMonitor.fragmentCount = fragmentBodies.length;
+                
+                const fpsElement = document.getElementById('fps-counter');
+                const objectElement = document.getElementById('object-counter');
+                const fragmentElement = document.getElementById('fragment-counter');
+                
+                if (fpsElement) fpsElement.textContent = performanceMonitor.fps;
+                if (objectElement) objectElement.textContent = performanceMonitor.objectCount;
+                if (fragmentElement) fragmentElement.textContent = performanceMonitor.fragmentCount;
+                
+                frameCount = 0;
+                lastFPSUpdate = now;
+            }
+            
+            performanceMonitor.lastFrameTime = now;
+        }
+
+        function updateDestructionStats() {
+            const elements = {
+                totalImpacts: document.getElementById('total-impacts'),
+                totalFragments: document.getElementById('total-fragments'),
+                totalEnergyReleased: document.getElementById('total-energy-released'),
+                destructionEfficiency: document.getElementById('destruction-efficiency')
+            };
+            
+            if (elements.totalImpacts) elements.totalImpacts.textContent = destructionStats.totalImpacts;
+            if (elements.totalFragments) elements.totalFragments.textContent = destructionStats.fragmentsCreated;
+            if (elements.totalEnergyReleased) {
+                elements.totalEnergyReleased.textContent = Math.round(destructionStats.totalEnergyReleased / 1000000);
+            }
+            if (elements.destructionEfficiency) {
+                const efficiency = destructionStats.totalImpacts > 0 ? 
+                    Math.round((destructionStats.fragmentsCreated / destructionStats.totalImpacts) * 10) : 0;
+                elements.destructionEfficiency.textContent = efficiency + '%';
+            }
+        }
+
+        function updateRealTimeAnalysis() {
+            try {
+                let totalKineticEnergy = 0;
+                let totalMomentum = new BABYLON.Vector3(0, 0, 0);
+                let totalMass = 0;
+                
+                [...celestialBodies, ...fragmentBodies].forEach(body => {
+                    if (body.physicsImpostor && body.initialParams) {
+                        const velocity = body.physicsImpostor.getLinearVelocity();
+                        const mass = body.initialParams.mass;
+                        
+                        totalKineticEnergy += PhysicsCalculator.calculateKineticEnergy(mass, velocity);
+                        totalMomentum = totalMomentum.add(PhysicsCalculator.calculateMomentum(mass, velocity));
+                        totalMass += mass;
+                    }
+                });
+                
+                const kineticEnergyElement = document.getElementById('current-kinetic-energy');
+                const momentumElement = document.getElementById('current-momentum');
+                const totalMassElement = document.getElementById('total-system-mass');
+                
+                if (kineticEnergyElement) {
+                    kineticEnergyElement.textContent = (totalKineticEnergy / 1000000).toFixed(2) + ' GJ';
+                }
+                if (momentumElement) {
+                    momentumElement.textContent = Math.round(totalMomentum.length()).toLocaleString() + ' kg⋅m/s';
+                }
+                if (totalMassElement) {
+                    totalMassElement.textContent = Math.round(totalMass).toLocaleString() + ' kg';
+                }
+                
+            } catch (error) {
+                logToScreen(`Error updating real-time analysis: ${error.message}`, "error");
+            }
+        }
+
+        // Library loading and initialization
+        function waitForLibraries() {
+            return new Promise((resolve, reject) => {
+                let attempts = 0;
+                const maxAttempts = 100;
+                
+                const checkLibraries = () => {
+                    attempts++;
+                    
+                    if (typeof BABYLON !== 'undefined' && typeof Ammo !== 'undefined') {
+                        updateLoadingStatus("Libraries loaded successfully");
+                        resolve();
+                    } else if (attempts >= maxAttempts) {
+                        const missingLibs = [];
+                        if (typeof BABYLON === 'undefined') missingLibs.push('BABYLON');
+                        if (typeof Ammo === 'undefined') missingLibs.push('Ammo');
+                        reject(new Error(`Libraries failed to load: ${missingLibs.join(', ')}`));
+                    } else {
+                        updateLoadingStatus(`Loading libraries... (${attempts}/${maxAttempts})`);
+                        setTimeout(checkLibraries, 100);
+                    }
+                };
+                
+                checkLibraries();
+            });
+        }
+
+        async function createScene() {
+            updateLoadingStatus("Creating scene...");
+            
+            try {
+                await waitForLibraries();
+                
+                updateLoadingStatus("Initializing Babylon.js engine...");
+                const canvas = document.getElementById('renderCanvas');
+                if (!canvas) {
+                    throw new Error("Canvas element not found");
+                }
+                
+                engine = new BABYLON.Engine(canvas, true, {
+                    antialias: true,
+                    stencil: true,
+                    preserveDrawingBuffer: true
+                });
+                
+                scene = new BABYLON.Scene(engine);
+                scene.actionManager = new BABYLON.ActionManager(scene);
+                
+                updateLoadingStatus("Initializing physics engine...");
+                const ammoInstance = await Ammo();
+                if (!ammoInstance) {
+                    throw new Error("Failed to initialize Ammo.js");
+                }
+                
+                const ammoPlugin = new BABYLON.AmmoJSPlugin(true, ammoInstance);
+                scene.enablePhysics(new BABYLON.Vector3(0, -9.81, 0), ammoPlugin);
+                
+                const physicsEngine = scene.getPhysicsEngine();
+                if (physicsEngine && physicsEngine.setTimeStep) {
+                    physicsEngine.setTimeStep(1/120);
+                }
+                
+                updateLoadingStatus("Setting up camera and lighting...");
+                camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 1500, BABYLON.Vector3.Zero(), scene);
+                camera.attachControl(canvas, true);
+                camera.minZ = 1;
+                camera.maxZ = 50000;
+                camera.wheelDeltaPercentage = 0.01;
+                camera.panningSensibility = 50;
+                
+                const hemisphericLight = new BABYLON.HemisphericLight("hemiLight", new BABYLON.Vector3(0, 1, 0), scene);
+                hemisphericLight.intensity = 0.4;
+                
+                const directionalLight = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-1, -1, -1), scene);
+                directionalLight.intensity = 0.6;
+                directionalLight.position = new BABYLON.Vector3(200, 200, 200);
+                
+                const pointLight = new BABYLON.PointLight("pointLight", new BABYLON.Vector3(0, 100, 0), scene);
+                pointLight.intensity = 0.3;
+                pointLight.diffuse = new BABYLON.Color3(0.8, 0.9, 1);
+                
+                updateLoadingStatus("Creating visual effects...");
+                glowLayer = new BABYLON.GlowLayer("glow", scene, {
+                    mainTextureSamples: 4,
+                    blurKernelSize: 64
+                });
+                glowLayer.intensity = 1.5;
+                
+                updateLoadingStatus("Creating enhanced starfield...");
+                createEnhancedStarfield();
+                
+                updateLoadingStatus("Setting up collision scenarios...");
+                defineCollisionScenarios();
+                
+                updateLoadingStatus("Initializing user interface...");
+                setupMobileUI();
+                
+                updateLoadingStatus("Setting up interaction system...");
+                setupEnhancedInteractions();
+                
+                updateLoadingStatus("Setting up collision detection...");
+                setupCollisionDetection();
+                
+                updateLoadingStatus("Loading default scenario...");
+                loadScenario('head-on-collision');
+                
+                updateLoadingStatus("Initialization complete!");
+                logToScreen("Enhanced collision simulator initialized successfully!", "info");
+                
+                setTimeout(hideLoadingScreen, 500);
+                return scene;
+                
+            } catch (error) {
+                logToScreen(`Critical initialization error: ${error.message}`, "error");
+                updateLoadingStatus(`ERROR: ${error.message}`);
+                return null;
+            }
+        }
+
+        function createEnhancedStarfield() {
+            try {
+                const starCount = 3000;
+                const stars = [];
+                
+                for (let i = 0; i < starCount; i++) {
+                    const star = BABYLON.MeshBuilder.CreateSphere(`star_${i}`, {
+                        diameter: 0.5 + Math.random() * 1.5,
+                        segments: 4
+                    }, scene);
+                    
+                    const radius = 8000 + Math.random() * 15000;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    
+                    star.position.x = radius * Math.sin(phi) * Math.cos(theta);
+                    star.position.y = radius * Math.sin(phi) * Math.sin(theta);
+                    star.position.z = radius * Math.cos(phi);
+                    
+                    const starMaterial = new BABYLON.StandardMaterial(`starMat_${i}`, scene);
+                    starMaterial.disableLighting = true;
+                    
+                    const starType = Math.random();
+                    if (starType < 0.6) {
+                        starMaterial.emissiveColor = new BABYLON.Color3(1, 1, 1);
+                    } else if (starType < 0.8) {
+                        starMaterial.emissiveColor = new BABYLON.Color3(0.8, 0.9, 1);
+                    } else if (starType < 0.95) {
+                        starMaterial.emissiveColor = new BABYLON.Color3(1, 1, 0.6);
+                    } else {
+                        starMaterial.emissiveColor = new BABYLON.Color3(1, 0.7, 0.6);
+                    }
+                    
+                    star.material = starMaterial;
+                    
+                    if (starType > 0.9 && glowLayer) {
+                        glowLayer.addIncludedOnlyMesh(star);
+                    }
+                    
+                    stars.push(star);
+                    
+                    if (stars.length >= 100) {
+                        const mergedStars = BABYLON.Mesh.MergeMeshes(stars, true, true, undefined, false, true);
+                        if (mergedStars) {
+                            mergedStars.name = `starGroup_${Math.floor(i / 100)}`;
+                            mergedStars.freezeWorldMatrix();
+                        }
+                        stars.length = 0;
+                    }
+                }
+                
+                if (stars.length > 0) {
+                    const mergedStars = BABYLON.Mesh.MergeMeshes(stars, true, true, undefined, false, true);
+                    if (mergedStars) {
+                        mergedStars.name = 'starGroup_final';
+                        mergedStars.freezeWorldMatrix();
+                    }
+                }
+                
+                logToScreen("Enhanced starfield created with 3000 stars", "info");
+            } catch (error) {
+                logToScreen(`Error creating starfield: ${error.message}`, "error");
+            }
+        }
+
+        function defineCollisionScenarios() {
+            window.enhancedScenarios = {
+                'head-on-collision': () => {
+                    clearAllBodies();
+                    
+                    const rock1 = createEnhancedCelestialBody({
+                        name: 'Rock Asteroid A',
+                        size: 40,
+                        mass: 300,
+                        position: new BABYLON.Vector3(-600, 0, 0),
+                        velocity: new BABYLON.Vector3(100, 0, 0),
+                        material: MaterialTypes.ROCK
+                    });
+                    
+                    const rock2 = createEnhancedCelestialBody({
+                        name: 'Rock Asteroid B',
+                        size: 35,
+                        mass: 250,
+                        position: new BABYLON.Vector3(600, 0, 0),
+                        velocity: new BABYLON.Vector3(-100, 0, 0),
+                        material: MaterialTypes.ROCK
+                    });
+                    
+                    updateCollisionPreview(rock1, rock2);
+                },
+                
+                'glancing-blow': () => {
+                    clearAllBodies();
+                    
+                    const metal1 = createEnhancedCelestialBody({
+                        name: 'Metal Meteoroid',
+                        size: 25,
+                        mass: 400,
+                        position: new BABYLON.Vector3(-500, 100, 0),
+                        velocity: new BABYLON.Vector3(120, -20, 0),
+                        material: MaterialTypes.METAL
+                    });
+                    
+                    const ice1 = createEnhancedCelestialBody({
+                        name: 'Ice Comet',
+                        size: 45,
+                        mass: 180,
+                        position: new BABYLON.Vector3(500, -50, 0),
+                        velocity: new BABYLON.Vector3(-80, 15, 0),
+                        material: MaterialTypes.ICE
+                    });
+                    
+                    updateCollisionPreview(metal1, ice1);
+                },
+                
+                'multi-body-collision': () => {
+                    clearAllBodies();
+                    
+                    const central = createEnhancedCelestialBody({
+                        name: 'Central Planetoid',
+                        size: 60,
+                        mass: 800,
+                        position: new BABYLON.Vector3(0, 0, 0),
+                        velocity: new BABYLON.Vector3(0, 0, 0),
+                        material: MaterialTypes.ROCK
+                    });
+                    
+                    for (let i = 0; i < 4; i++) {
+                        const angle = (i / 4) * Math.PI * 2;
+                        const distance = 800;
+                        const speed = 80 + Math.random() * 40;
+                        
+                        createEnhancedCelestialBody({
+                            name: `Asteroid ${i + 1}`,
+                            size: 20 + Math.random() * 15,
+                            mass: 100 + Math.random() * 100,
+                            position: new BABYLON.Vector3(
+                                Math.cos(angle) * distance,
+                                (Math.random() - 0.5) * 200,
+                                Math.sin(angle) * distance
+                            ),
+                            velocity: new BABYLON.Vector3(
+                                -Math.cos(angle) * speed,
+                                (Math.random() - 0.5) * 20,
+                                -Math.sin(angle) * speed
+                            ),
+                            material: Object.values(MaterialTypes)[Math.floor(Math.random() * Object.values(MaterialTypes).length)]
+                        });
+                    }
+                },
+                
+                'high-velocity-impact': () => {
+                    clearAllBodies();
+                    
+                    const target = createEnhancedCelestialBody({
+                        name: 'Target Planet',
+                        size: 80,
+                        mass: 1200,
+                        position: new BABYLON.Vector3(200, 0, 0),
+                        velocity: new BABYLON.Vector3(0, 0, 0),
+                        material: MaterialTypes.ROCK
+                    });
+                    
+                    const impactor = createEnhancedCelestialBody({
+                        name: 'High-Speed Impactor',
+                        size: 15,
+                        mass: 80,
+                        position: new BABYLON.Vector3(-800, 0, 0),
+                        velocity: new BABYLON.Vector3(250, 0, 0),
+                        material: MaterialTypes.METAL
+                    });
+                    
+                    updateCollisionPreview(target, impactor);
+                },
+                
+                'material-comparison': () => {
+                    clearAllBodies();
+                    
+                    const materials = [MaterialTypes.ROCK, MaterialTypes.METAL, MaterialTypes.ICE, MaterialTypes.CRYSTAL];
+                    
+                    materials.forEach((material, index) => {
+                        const y = (index - 1.5) * 150;
+                        
+                        createEnhancedCelestialBody({
+                            name: `${material.name} Sample A`,
+                            size: 30,
+                            mass: 200,
+                            position: new BABYLON.Vector3(-400, y, 0),
+                            velocity: new BABYLON.Vector3(80, 0, 0),
+                            material: material
+                        });
+                        
+                        createEnhancedCelestialBody({
+                            name: `${material.name} Sample B`,
+                            size: 30,
+                            mass: 200,
+                            position: new BABYLON.Vector3(400, y, 0),
+                            velocity: new BABYLON.Vector3(-80, 0, 0),
+                            material: material
+                        });
+                    });
+                },
+                
+                'asteroid-field': () => {
+                    clearAllBodies();
+                    
+                    for (let i = 0; i < 12; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const radius = 300 + Math.random() * 600;
+                        const size = 15 + Math.random() * 25;
+                        
+                        createEnhancedCelestialBody({
+                            name: `Asteroid ${i + 1}`,
+                            size: size,
+                            mass: 50 + Math.random() * 150,
+                            position: new BABYLON.Vector3(
+                                Math.cos(angle) * radius,
+                                (Math.random() - 0.5) * 400,
+                                Math.sin(angle) * radius
+                            ),
+                            velocity: new BABYLON.Vector3(
+                                (Math.random() - 0.5) * 60,
+                                (Math.random() - 0.5) * 40,
+                                (Math.random() - 0.5) * 60
+                            ),
+                            material: Math.random() > 0.5 ? MaterialTypes.ROCK : MaterialTypes.METAL
+                        });
+                    }
+                },
+                
+                'planetary-collision': () => {
+                    clearAllBodies();
+                    
+                    const planet1 = createEnhancedCelestialBody({
+                        name: 'Proto-Planet Alpha',
+                        size: 100,
+                        mass: 2000,
+                        position: new BABYLON.Vector3(-800, 0, 0),
+                        velocity: new BABYLON.Vector3(40, 10, 0),
+                        material: MaterialTypes.ROCK
+                    });
+                    
+                    const planet2 = createEnhancedCelestialBody({
+                        name: 'Proto-Planet Beta',
+                        size: 90,
+                        mass: 1800,
+                        position: new BABYLON.Vector3(800, 0, 0),
+                        velocity: new BABYLON.Vector3(-45, -8, 0),
+                        material: MaterialTypes.ROCK
+                    });
+                    
+                    updateCollisionPreview(planet1, planet2);
+                }
+            };
+        }
+
+        function updateCollisionPreview(body1, body2) {
+            if (!body1 || !body2) return;
+            
+            try {
+                const timeToImpact = PhysicsCalculator.predictCollisionTime(body1, body2);
+                const predictedEnergy = PhysicsCalculator.calculateCollisionEnergy(body1, body2);
+                const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2);
+                const predictedFragments = PhysicsCalculator.calculateFragmentationPrediction(
+                    body1.initialParams.material, predictedEnergy
+                ) + PhysicsCalculator.calculateFragmentationPrediction(
+                    body2.initialParams.material, predictedEnergy
+                );
+                
+                const elements = {
+                    predictedEnergy: document.getElementById('predicted-energy'),
+                    predictedFragments: document.getElementById('predicted-fragments'),
+                    collisionAngle: document.getElementById('collision-angle'),
+                    timeToImpact: document.getElementById('time-to-impact'),
+                    trajectoryPreview: document.getElementById('trajectory-preview')
+                };
+                
+                if (elements.predictedEnergy) {
+                    elements.predictedEnergy.textContent = Math.round(predictedEnergy / 1000000);
+                }
+                if (elements.predictedFragments) {
+                    elements.predictedFragments.textContent = predictedFragments;
+                }
+                if (elements.collisionAngle) {
+                    elements.collisionAngle.textContent = Math.round(impactAngle) + '°';
+                }
+                if (elements.timeToImpact) {
+                    if (timeToImpact === Infinity) {
+                        elements.timeToImpact.textContent = '∞';
+                    } else {
+                        elements.timeToImpact.textContent = Math.round(timeToImpact) + 's';
+                    }
+                }
+                if (elements.trajectoryPreview) {
+                    elements.trajectoryPreview.textContent = 
+                        `${body1.initialParams.name} vs ${body2.initialParams.name}`;
+                }
+                
+            } catch (error) {
+                logToScreen(`Error updating collision preview: ${error.message}`, "error");
+            }
+        }
+
+        function createEnhancedCelestialBody(params) {
+            const { size, mass, position, velocity, name, material = MaterialTypes.ROCK, isStatic = false } = params;
+            
+            try {
+                if (!scene) {
+                    throw new Error("Scene not initialized");
+                }
+                
+                const bodyMesh = BABYLON.MeshBuilder.CreateSphere(name, {
+                    diameter: size * 2,
+                    segments: 32
+                }, scene);
+                
+                bodyMesh.position = position.clone();
+                
+                const bodyMaterial = new BABYLON.StandardMaterial(`${name}_material`, scene);
+                bodyMaterial.diffuseColor = BABYLON.Color3.FromHexString(material.color);
+                bodyMaterial.emissiveColor = bodyMaterial.diffuseColor.scale(material.emissive);
+                bodyMaterial.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                
+                bodyMesh.material = bodyMaterial;
+                
+                if (material.emissive > 0.1 && glowLayer) {
+                    glowLayer.addIncludedOnlyMesh(bodyMesh);
+                }
+                
+                if (!isStatic) {
+                    const restitution = parseFloat(document.getElementById('restitution')?.value || 0.7);
+                    const friction = parseFloat(document.getElementById('friction')?.value || 0.8);
+                    
+                    bodyMesh.physicsImpostor = new BABYLON.PhysicsImpostor(
+                        bodyMesh,
+                        BABYLON.PhysicsImpostor.SphereImpostor,
+                        {
+                            mass: mass,
+                            restitution: restitution * material.ductility,
+                            friction: friction
+                        },
+                        scene
+                    );
+                    
+                    if (velocity && velocity.length() > 0) {
+                        bodyMesh.physicsImpostor.setLinearVelocity(velocity);
+                    }
+                }
+                
+                bodyMesh.initialParams = {
+                    name: name,
+                    size: size,
+                    mass: mass,
+                    position: position.clone(),
+                    velocity: velocity ? velocity.clone() : BABYLON.Vector3.Zero(),
+                    material: material,
+                    isStatic: isStatic,
+                    creationTime: Date.now(),
+                    volume: (4/3) * Math.PI * Math.pow(size, 3),
+                    density: mass / ((4/3) * Math.PI * Math.pow(size, 3))
+                };
+                
+                initialCelestialStates[name] = {
+                    position: position.clone(),
+                    velocity: velocity ? velocity.clone() : BABYLON.Vector3.Zero(),
+                    params: JSON.parse(JSON.stringify(params))
+                };
+                
+                celestialBodies.push(bodyMesh);
+                
+                logToScreen(`Created ${name} (${material.name}) - Mass: ${mass}kg, Size: ${size}m`, "info");
+                return bodyMesh;
+                
+            } catch (error) {
+                logToScreen(`Error creating celestial body ${name}: ${error.message}`, "error");
+                return null;
+            }
+        }
+
+        function clearAllBodies() {
+            try {
+                [...celestialBodies].forEach(body => {
+                    if (body.physicsImpostor) {
+                        body.physicsImpostor.dispose();
+                    }
+                    body.dispose();
+                });
+                celestialBodies = [];
+                
+                [...fragmentBodies].forEach(fragment => {
+                    if (fragment.physicsImpostor) {
+                        fragment.physicsImpostor.dispose();
+                    }
+                    fragment.dispose();
+                });
+                fragmentBodies = [];
+                
+                while(trajectoryLines.length) {
+                    trajectoryLines.pop().dispose();
+                }
+                
+                destructionStats = {
+                    totalImpacts: 0,
+                    fragmentsCreated: 0,
+                    totalEnergyReleased: 0,
+                    destructionEfficiency: 0,
+                    largestFragmentation: 0,
+                    collisionHistory: [],
+                    materialInteractions: {}
+                };
+                
+                updateDestructionStats();
+                updateRealTimeAnalysis();
+                
+            } catch (error) {
+                logToScreen(`Error clearing bodies: ${error.message}`, "error");
+            }
+        }
+
+        function setupMobileUI() {
+            try {
+                bindUIEvents();
+                syncRangeInputs();
+                initializeMaterialSelector();
+                updateModeDisplay();
+                
+                logToScreen("Mobile UI initialized successfully", "info");
+            } catch (error) {
+                logToScreen(`Error setting up mobile UI: ${error.message}`, "error");
+            }
+        }
+
+        function bindUIEvents() {
+            const playPauseButton = document.getElementById('play-pause-button');
+            if (playPauseButton) {
+                playPauseButton.addEventListener('click', toggleSimulation);
+            }
+            
+            const resetButton = document.getElementById('reset-button');
+            if (resetButton) {
+                resetButton.addEventListener('click', resetSimulation);
+            }
+            
+            const quickCollisionBtn = document.getElementById('quick-collision-btn');
+            if (quickCollisionBtn) {
+                quickCollisionBtn.addEventListener('click', () => loadScenario('head-on-collision'));
+            }
+            
+            const slowMotionBtn = document.getElementById('slow-motion-btn');
+            if (slowMotionBtn) {
+                slowMotionBtn.addEventListener('click', toggleSlowMotion);
+            }
+            
+            const toggleModeBtn = document.getElementById('toggle-mode-btn');
+            if (toggleModeBtn) {
+                toggleModeBtn.addEventListener('click', toggleInteractionMode);
+            }
+            
+            const loadScenarioBtn = document.getElementById('load-scenario-btn');
+            if (loadScenarioBtn) {
+                loadScenarioBtn.addEventListener('click', () => {
+                    const selector = document.getElementById('scenario-selector');
+                    if (selector) {
+                        loadScenario(selector.value);
+                    }
+                });
+            }
+            
+            const advancedButtons = {
+                'conserve-momentum-btn': () => { conserveMomentum = !conserveMomentum; },
+                'conserve-energy-btn': () => { conserveEnergy = !conserveEnergy; },
+                'realistic-materials-btn': () => { realisticMaterials = !realisticMaterials; },
+                'advanced-fracture-btn': () => { advancedFracture = !advancedFracture; }
+            };
+            
+            Object.entries(advancedButtons).forEach(([id, handler]) => {
+                const button = document.getElementById(id);
+                if (button) {
+                    button.addEventListener('click', () => {
+                        handler();
+                        button.style.background = button.style.background.includes('success') ? 
+                            '' : 'linear-gradient(135deg, var(--success-color), #40c057)';
+                    });
+                }
+            });
+        }
+
+        function syncRangeInputs() {
+            const inputPairs = [
+                ['time-scale', 'time-scale-value'],
+                ['gravity-scale', 'gravity-scale-value'],
+                ['object-size', 'object-size-value'],
+                ['object-mass', 'object-mass-value'],
+                ['object-velocity', 'object-velocity-value'],
+                ['restitution', 'restitution-value'],
+                ['friction', 'friction-value'],
+                ['air-resistance', 'air-resistance-value'],
+                ['fragment-multiplier', 'fragment-multiplier-value'],
+                ['destruction-threshold', 'destruction-threshold-value']
+            ];
+            
+            inputPairs.forEach(([rangeId, valueId]) => {
+                const range = document.getElementById(rangeId);
+                const value = document.getElementById(valueId);
+                
+                if (range && value) {
+                    range.addEventListener('input', () => {
+                        value.value = range.value;
+                        handleParameterChange(rangeId, parseFloat(range.value));
+                    });
+                    value.addEventListener('input', () => {
+                        range.value = value.value;
+                        handleParameterChange(rangeId, parseFloat(value.value));
+                    });
+                }
+            });
+        }
+
+        function handleParameterChange(id, value) {
+            switch(id) {
+                case 'time-scale':
+                    timeScale = value;
+                    slowMotionMode = false;
+                    const slowMotionBtn = document.getElementById('slow-motion-btn');
+                    if (slowMotionBtn) slowMotionBtn.style.background = '';
+                    break;
+                case 'gravity-scale':
+                    gravityScale = value;
+                    break;
+                case 'restitution':
+                case 'friction':
+                    break;
+            }
+        }
+
+        function resetSimulation() {
+            logToScreen("Resetting simulation to initial state...", "info");
+            
+            const scenarioSelector = document.getElementById('scenario-selector');
+            if (currentScenario && window.enhancedScenarios[currentScenario]) {
+                loadScenario(currentScenario);
+            } else if (scenarioSelector) {
+                loadScenario(scenarioSelector.value);
+            }
+            
+            simulationState = 'PAUSED';
+            const playPauseButton = document.getElementById('play-pause-button');
+            if (playPauseButton) {
+                playPauseButton.textContent = 'Start Simulation';
+                playPauseButton.classList.add('paused');
+            }
+            
+            timeScale = 1.0;
+            slowMotionMode = false;
+            const timeScaleSlider = document.getElementById('time-scale');
+            const timeScaleValue = document.getElementById('time-scale-value');
+            if (timeScaleSlider) timeScaleSlider.value = 1.0;
+            if (timeScaleValue) timeScaleValue.value = 1.0;
+        }
+
+        function loadScenario(scenarioName) {
+            if (window.enhancedScenarios && window.enhancedScenarios[scenarioName]) {
+                currentScenario = scenarioName;
+                window.enhancedScenarios[scenarioName]();
+                logToScreen(`Loaded scenario: ${scenarioName}`, "info");
+            } else {
+                logToScreen(`Scenario '${scenarioName}' not found.`, "error");
+            }
+        }
+
+        function setupEnhancedInteractions() {
+            scene.onPointerDown = (evt, pickInfo) => {
+                if (interactionMode === 'ADD' && (!pickInfo.hit || !celestialBodies.includes(pickInfo.pickedMesh))) {
+                    startDragging(pickInfo.pickedPoint);
+                } else if (interactionMode === 'SELECT' && pickInfo.pickedMesh && celestialBodies.includes(pickInfo.pickedMesh)) {
+                    selectObject(pickInfo.pickedMesh);
+                }
+            };
+            
+            scene.onPointerMove = (evt, pickInfo) => {
+                if (isDragging) {
+                    updateDragging(pickInfo);
+                }
+            };
+            
+            scene.onPointerUp = () => {
+                if (isDragging) {
+                    finishDragging();
+                }
+            };
+        }
+
+        function startDragging(startPoint) {
+            isDragging = true;
+            dragStartPosition = startPoint.clone();
+            
+            const linePoints = [startPoint, startPoint];
+            dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, updatable: true }, scene);
+            dragLine.color = BABYLON.Color3.Yellow();
+            dragLine.renderingGroupId = 1;
+
+            velocityArrow = BABYLON.MeshBuilder.CreateCylinder("velocityArrow", { height: 10, diameterTop: 0, diameterBottom: 5 }, scene);
+            velocityArrow.material = new BABYLON.StandardMaterial("arrowMat", scene);
+            velocityArrow.material.emissiveColor = BABYLON.Color3.Yellow();
+            velocityArrow.isVisible = false;
+        }
+
+        function updateDragging(pickInfo) {
+            if (!isDragging || !dragLine || !pickInfo.hit) return;
+            
+            const currentPoint = pickInfo.pickedPoint;
+            const linePoints = [dragStartPosition, currentPoint];
+            dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, instance: dragLine }, scene);
+
+            const direction = currentPoint.subtract(dragStartPosition);
+            const length = direction.length();
+
+            if (length > 1 && velocityArrow) {
+                velocityArrow.isVisible = true;
+                velocityArrow.position = dragStartPosition.add(direction.scale(0.5));
+                velocityArrow.scaling.y = length / 10;
+                velocityArrow.lookAt(currentPoint);
+                velocityArrow.rotation.x += Math.PI / 2;
+            }
+        }
+
+        function finishDragging() {
+            if (!isDragging || !dragStartPosition) return;
+
+            const endPoint = scene.pick(scene.pointerX, scene.pointerY).pickedPoint || dragStartPosition;
+            const velocityVector = endPoint.subtract(dragStartPosition).scale(2);
+
+            const size = parseFloat(document.getElementById('object-size')?.value || 30);
+            const mass = parseFloat(document.getElementById('object-mass')?.value || 150);
+
+            createEnhancedCelestialBody({
+                name: `Object_${Date.now()}`,
+                size: size,
+                mass: mass,
+                position: dragStartPosition,
+                velocity: velocityVector,
+                material: selectedMaterial
+            });
+            
+            if (dragLine) dragLine.dispose();
+            if (velocityArrow) velocityArrow.dispose();
+            isDragging = false;
+            dragStartPosition = null;
+        }
+
+        function selectObject(mesh) {
+            if (selectedObject) {
+                selectedObject.renderOutline = false;
+            }
+            
+            selectedObject = mesh;
+            selectedObject.renderOutline = true;
+            selectedObject.outlineColor = BABYLON.Color3.FromHexString('#8fa8ff');
+            selectedObject.outlineWidth = 0.1;
+            
+            const mobileInfo = document.getElementById('selected-object-info');
+            if (mobileInfo) {
+                mobileInfo.style.display = 'block';
+                updateMobileSelectionInfo(mesh);
+                switchTab('objects');
+            }
+        }
+        
+        function updateMobileSelectionInfo(mesh) {
+            const detailsDiv = document.getElementById('object-details');
+            if (!detailsDiv || !mesh.initialParams) return;
+
+            const params = mesh.initialParams;
+            const velocity = mesh.physicsImpostor ? mesh.physicsImpostor.getLinearVelocity() : BABYLON.Vector3.Zero();
+            
+            detailsDiv.innerHTML = `
+                <div class="compact-control-row"><label>Name:</label><span>${params.name}</span></div>
+                <div class="compact-control-row"><label>Material:</label><span>${params.material.name}</span></div>
+                <div class="compact-control-row"><label>Mass:</label><span>${params.mass} kg</span></div>
+                <div class="compact-control-row"><label>Size:</label><span>${params.size} m</span></div>
+                <div class="compact-control-row"><label>Speed:</label><span>${Math.round(velocity.length())} m/s</span></div>
+            `;
+        }
+        
+        function updateModeDisplay() {
+            const indicator = document.getElementById('mode-indicator');
+            if (indicator) {
+                if (interactionMode === 'ADD') {
+                    indicator.textContent = 'Add Mode';
+                    indicator.className = 'mode-indicator add';
+                } else {
+                    indicator.textContent = 'Select Mode';
+                    indicator.className = 'mode-indicator select';
+                }
+            }
+        }
+        
+        function setupCollisionDetection() {
+            scene.onBeforeRenderObservable.add(() => {
+                if (simulationState !== 'RUNNING') return;
+                
+                // Clear trajectory lines
+                while(trajectoryLines.length) {
+                    trajectoryLines.pop().dispose();
+                }
+
+                // Check for potential collisions between all celestial bodies
+                for (let i = 0; i < celestialBodies.length; i++) {
+                    for (let j = i + 1; j < celestialBodies.length; j++) {
+                        const body1 = celestialBodies[i];
+                        const body2 = celestialBodies[j];
+                        
+                        if (body1.physicsImpostor && body2.physicsImpostor) {
+                            if (body1.intersectsMesh(body2, false)) {
+                                CollisionSystem.handleCollision(body1, body2);
+                            } else {
+                                // Draw trajectory line if bodies are approaching each other
+                                const v1 = body1.physicsImpostor.getLinearVelocity();
+                                const v2 = body2.physicsImpostor.getLinearVelocity();
+                                const pos1 = body1.position;
+                                const pos2 = body2.position;
+                                
+                                const relativePos = pos2.subtract(pos1);
+                                const relativeVel = v2.subtract(v1);
+
+                                if (BABYLON.Vector3.Dot(relativePos, relativeVel) < 0) { // Approaching
+                                    const line = BABYLON.MeshBuilder.CreateLines(`traj_${i}_${j}`, {points: [pos1, pos2]}, scene);
+                                    line.color = BABYLON.Color3.Red();
+                                    line.alpha = 0.5;
+                                    trajectoryLines.push(line);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Update analytics
+                updateRealTimeAnalysis();
+            });
+        }
+        
+        function analyzeCurrentCollisions() {
+            logToScreen("Analyzing current collision trajectories...", "info");
+            let closestCollisionTime = Infinity;
+            let closestPair = null;
+
+            for (let i = 0; i < celestialBodies.length; i++) {
+                for (let j = i + 1; j < celestialBodies.length; j++) {
+                    const time = PhysicsCalculator.predictCollisionTime(celestialBodies[i], celestialBodies[j]);
+                    if (time < closestCollisionTime) {
+                        closestCollisionTime = time;
+                        closestPair = [celestialBodies[i], celestialBodies[j]];
+                    }
+                }
+            }
+
+            if (closestPair) {
+                updateCollisionPreview(closestPair[0], closestPair[1]);
+                logToScreen(`Predicted collision between ${closestPair[0].initialParams.name} and ${closestPair[1].initialParams.name} in ${closestCollisionTime.toFixed(1)}s.`, "info");
+            } else {
+                logToScreen("No immediate collisions predicted.", "info");
+            }
+        }
+        
+        function toggleSimulation() {
+            simulationState = (simulationState === 'PAUSED') ? 'RUNNING' : 'PAUSED';
+            const button = document.getElementById('play-pause-button');
+            if (button) {
+                button.textContent = (simulationState === 'PAUSED') ? 'Start Simulation' : 'Pause Simulation';
+                button.classList.toggle('paused', simulationState === 'PAUSED');
+            }
+            
+            logToScreen(`Simulation ${simulationState.toLowerCase()}`, "info");
+        }
+
+        function toggleSlowMotion() {
+            slowMotionMode = !slowMotionMode;
+            const button = document.getElementById('slow-motion-btn');
+            if (slowMotionMode) {
+                timeScale = 0.1;
+                if (button) {
+                    button.style.background = 'linear-gradient(135deg, #ffd43b, #fab005)';
+                    button.textContent = 'Normal Speed';
+                }
+                logToScreen("Slow motion activated (0.1x speed)", "info");
+            } else {
+                timeScale = 1.0;
+                if (button) {
+                    button.style.background = '';
+                    button.textContent = 'Slow Motion';
+                }
+                logToScreen("Normal speed restored", "info");
+            }
+            
+            // Update slider
+            const slider = document.getElementById('time-scale');
+            const valueDisplay = document.getElementById('time-scale-value');
+            if (slider) slider.value = timeScale;
+            if (valueDisplay) valueDisplay.value = timeScale;
+        }
+
+        function toggleInteractionMode() {
+            interactionMode = interactionMode === 'ADD' ? 'SELECT' : 'ADD';
+            updateModeDisplay();
+            
+            const canvas = document.getElementById('renderCanvas');
+            if (canvas) {
+                canvas.className = interactionMode === 'SELECT' ? 'selection-mode' : '';
+            }
+            
+            logToScreen(`Switched to ${interactionMode} mode`, "info");
+        }
+        
+        function initializeMaterialSelector() {
+            document.querySelectorAll('.material-option').forEach(option => {
+                option.addEventListener('click', () => {
+                    document.querySelectorAll('.material-option').forEach(opt => opt.classList.remove('selected'));
+                    option.classList.add('selected');
+                    selectedMaterial = MaterialTypes[option.dataset.material];
+                    updateFracturePreview();
+                    logToScreen(`Selected material: ${selectedMaterial.name}`, "info");
+                });
+            });
+        }
+
+        function updateFracturePreview() {
+            const preview = document.getElementById('fracture-pattern-display');
+            if (!preview || !selectedMaterial) return;
+            
+            preview.innerHTML = '';
+            preview.style.background = `radial-gradient(circle, ${selectedMaterial.color}20, transparent)`;
+            
+            const patternText = document.createElement('div');
+            patternText.style.color = 'var(--text-secondary)';
+            patternText.style.fontSize = '0.8em';
+            patternText.style.textAlign = 'center';
+            patternText.textContent = `${selectedMaterial.name} - ${selectedMaterial.fracturePattern} pattern`;
+            preview.appendChild(patternText);
+            
+            // Add visual fracture pattern representation
+            const numDots = Math.floor((selectedMaterial.fragments.min + selectedMaterial.fragments.max) / 4);
+            for (let i = 0; i < numDots; i++) {
+                const dot = document.createElement('div');
+                dot.style.position = 'absolute';
+                dot.style.width = '3px';
+                dot.style.height = '3px';
+                dot.style.background = selectedMaterial.color;
+                dot.style.borderRadius = selectedMaterial.fracturePattern === 'angular' ? '0' : '50%';
+                dot.style.top = `${20 + Math.random() * 60}%`;
+                dot.style.left = `${20 + Math.random() * 60}%`;
+                dot.style.opacity = '0.6';
+                preview.appendChild(dot);
+            }
+        }
+        
+        function toggleMobileUI() {
+            const container = document.getElementById('mobile-ui');
+            const button = document.getElementById('mobile-collapse-btn');
+            if (container && button) {
+                container.classList.toggle('collapsed');
+                button.classList.toggle('collapsed');
+                button.textContent = container.classList.contains('collapsed') ? '▲' : '▼';
+            }
+        }
+
+        function switchTab(tabId) {
+            // Remove active class from all tabs and buttons
+            document.querySelectorAll('.mobile-tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.mobile-tab-btn').forEach(btn => btn.classList.remove('active'));
+            
+            // Add active class to selected tab and button
+            const selectedTab = document.getElementById(`${tabId}-tab`);
+            const selectedButton = document.querySelector(`[onclick="switchTab('${tabId}')"]`);
+            
+            if (selectedTab) selectedTab.classList.add('active');
+            if (selectedButton) selectedButton.classList.add('active');
+        }
+
+        function startRenderLoop() {
+            engine.runRenderLoop(() => {
+                if (scene) {
+                    // Update physics based on simulation state
+                    if (simulationState === 'RUNNING') {
+                        const physicsEngine = scene.getPhysicsEngine();
+                        if (physicsEngine) {
+                            physicsEngine.setGravity(new BABYLON.Vector3(0, -9.81 * gravityScale, 0));
+                            
+                            // Apply time scaling for slow motion
+                            const deltaTime = engine.getDeltaTime() / 1000;
+                            const scaledDeltaTime = deltaTime * timeScale;
+                            
+                            if (physicsEngine.setTimeStep) {
+                                physicsEngine.setTimeStep(scaledDeltaTime);
+                            }
+                        }
+                        
+                        // Run collision detection
+                        CollisionSystem.detectCollisions();
+                    }
+                    
+                    // Always render the scene
+                    scene.render();
+                    updatePerformanceMonitor();
+                }
+            });
+        }
+
+        // Enhanced cleanup system for fragments
+        function cleanupOldFragments() {
+            const currentTime = Date.now();
+            const fragmentsToRemove = [];
+            
+            fragmentBodies.forEach((fragment, index) => {
+                if (fragment.initialParams && 
+                    currentTime - fragment.initialParams.creationTime > PHYSICS_CONSTANTS.FRAGMENT_LIFETIME) {
+                    fragmentsToRemove.push(fragment);
+                }
+            });
+            
+            fragmentsToRemove.forEach(fragment => {
+                AdvancedFractureEngine.cleanupFragment(fragment);
+            });
+            
+            if (fragmentsToRemove.length > 0) {
+                logToScreen(`Cleaned up ${fragmentsToRemove.length} old fragments`, "info");
+            }
+        }
+
+        // Automatic fragment cleanup timer
+        setInterval(cleanupOldFragments, 5000); // Clean up every 5 seconds
+
+        // Enhanced error handling for physics engine
+        function handlePhysicsError(error) {
+            logToScreen(`Physics engine error: ${error.message}`, "error");
+            
+            // Attempt to restart physics if it fails
+            if (scene && scene.getPhysicsEngine()) {
+                try {
+                    scene.getPhysicsEngine().dispose();
+                    setTimeout(() => {
+                        if (typeof Ammo !== 'undefined') {
+                            Ammo().then(ammoInstance => {
+                                const ammoPlugin = new BABYLON.AmmoJSPlugin(true, ammoInstance);
+                                scene.enablePhysics(new BABYLON.Vector3(0, -9.81, 0), ammoPlugin);
+                                logToScreen("Physics engine restarted successfully", "info");
+                            });
+                        }
+                    }, 1000);
+                } catch (restartError) {
+                    logToScreen(`Failed to restart physics engine: ${restartError.message}`, "error");
+                }
+            }
+        }
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            if (engine) {
+                engine.resize();
+                logToScreen("Canvas resized", "info");
+            }
+        });
+
+        // Visibility change handler to pause simulation when tab is not visible
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && simulationState === 'RUNNING') {
+                // Auto-pause when tab is hidden to save resources
+                toggleSimulation();
+                logToScreen("Simulation auto-paused (tab hidden)", "info");
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (event) => {
+            switch(event.code) {
+                case 'Space':
+                    event.preventDefault();
+                    toggleSimulation();
+                    break;
+                case 'KeyR':
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        resetSimulation();
+                    }
+                    break;
+                case 'KeyS':
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        toggleSlowMotion();
+                    }
+                    break;
+                case 'KeyM':
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        toggleInteractionMode();
+                    }
+                    break;
+                case 'Escape':
+                    if (selectedObject) {
+                        selectedObject.renderOutline = false;
+                        selectedObject = null;
+                        const mobileInfo = document.getElementById('selected-object-info');
+                        if (mobileInfo) mobileInfo.style.display = 'none';
+                    }
+                    break;
+            }
+        });
+
+        // Touch handling for mobile devices
+        let touchStartTime = 0;
+        let touchStartPosition = null;
+
+        document.addEventListener('touchstart', (event) => {
+            touchStartTime = Date.now();
+            if (event.touches.length === 1) {
+                touchStartPosition = {
+                    x: event.touches[0].clientX,
+                    y: event.touches[0].clientY
+                };
+            }
+        });
+
+        document.addEventListener('touchend', (event) => {
+            const touchDuration = Date.now() - touchStartTime;
+            
+            // Long press detection (for mode switching on mobile)
+            if (touchDuration > 500 && touchStartPosition) {
+                const canvas = document.getElementById('renderCanvas');
+                const rect = canvas.getBoundingClientRect();
+                const x = touchStartPosition.x - rect.left;
+                const y = touchStartPosition.y - rect.top;
+                
+                // Check if touch was on canvas
+                if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+                    toggleInteractionMode();
+                }
+            }
+        });
+
+        // Initialize the application
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                logToScreen("Initializing Enhanced Collision Simulator...", "info");
+                await createScene();
+                
+                if (scene) {
+                    startRenderLoop();
+                    logToScreen("Application initialized successfully!", "info");
+                    logToScreen("Controls: Space=Play/Pause, Ctrl+R=Reset, Ctrl+S=Slow Motion, Ctrl+M=Mode Switch", "info");
+                } else {
+                    throw new Error("Scene creation failed");
+                }
+            } catch (error) {
+                logToScreen(`Fatal error during initialization: ${error.message}`, "error");
+                
+                // Show fallback error message
+                const fallbackError = document.createElement('div');
+                fallbackError.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: rgba(255, 0, 0, 0.9); color: white; padding: 20px;
+                    border-radius: 10px; text-align: center; z-index: 10000;
+                    font-family: Arial, sans-serif;
+                `;
+                fallbackError.innerHTML = `
+                    <h3>Initialization Failed</h3>
+                    <p>${error.message}</p>
+                    <p>Please refresh the page to try again.</p>
+                    <button onclick="location.reload()" style="padding: 10px 20px; margin-top: 10px; cursor: pointer;">
+                        Reload Page
+                    </button>
+                `;
+                document.body.appendChild(fallbackError);
+            }
+        });
+
+        // Export global functions for HTML onclick handlers
+        window.toggleMobileUI = toggleMobileUI;
+        window.switchTab = switchTab;
+        window.toggleSimulation = toggleSimulation;
+        window.resetSimulation = resetSimulation;
+        window.toggleSlowMotion = toggleSlowMotion;
+        window.toggleInteractionMode = toggleInteractionMode;
+
+    </script>
+</body>
+</html>
