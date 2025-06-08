@@ -2340,10 +2340,14 @@
         }
 
         function startDragging(startPoint) {
+            if (!startPoint) {
+                logToScreen("Cannot start dragging: No valid start point picked.", "warn");
+                return; // Exit if startPoint is null
+            }
             isDragging = true;
             dragStartPosition = startPoint.clone();
             
-            const linePoints = [startPoint, startPoint];
+            const linePoints = [startPoint, startPoint]; // startPoint is guaranteed to be non-null here
             dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, updatable: true }, scene);
             dragLine.color = BABYLON.Color3.Yellow();
             dragLine.renderingGroupId = 1;
@@ -2358,7 +2362,13 @@
             if (!isDragging || !dragLine || !pickInfo.hit) return;
             
             const currentPoint = pickInfo.pickedPoint;
-            const linePoints = [dragStartPosition, currentPoint];
+            if (!currentPoint) {
+                // Optional: log a warning, but it might be too frequent during mouse movements.
+                // logToScreen("Cannot update dragging: No valid current point picked during move.", "warn");
+                return; // Exit if currentPoint is null
+            }
+
+            const linePoints = [dragStartPosition, currentPoint]; // currentPoint is now guaranteed non-null
             dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, instance: dragLine }, scene);
 
             const direction = currentPoint.subtract(dragStartPosition);
