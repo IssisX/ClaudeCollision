@@ -1079,7 +1079,26 @@
                 }
             }
 
-            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy) {
+            static applyVertexDisplacement(mesh, size, displacementScaleFactor) {
+                if (!mesh) return;
+                const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                if (!positions) return;
+
+                const displacementAmount = size * displacementScaleFactor;
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] += (Math.random() - 0.5) * displacementAmount;
+                    positions[i + 1] += (Math.random() - 0.5) * displacementAmount;
+                    positions[i + 2] += (Math.random() - 0.5) * displacementAmount;
+                }
+                mesh.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+                // Optional: Recalculate normals if lighting is critical for these fragments
+                // const normals = [];
+                // BABYLON.VertexData.ComputeNormals(positions, mesh.getIndices(), normals);
+                // mesh.setVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+            }
+
+            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy, parentAngularVelocity) {
                 if (!scene) {
                     logToScreen("Error: Scene not available in createRealisticFragment", "error");
                     return null;
@@ -1099,10 +1118,11 @@
                     
                     if (fragmentMesh) {
                         fragmentMesh.position = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z);
-                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, energyRatio);
+                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, voronoiPoint.energy);
                         
                         const fragmentMass = originalMesh.initialParams.mass * energyRatio * 0.1;
-                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy);
+                        const fragmentRelativePosition = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z).subtract(originalMesh.position);
+                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy, parentAngularVelocity, fragmentRelativePosition);
                         
                         fragmentMesh.initialParams = {
                             name: 'fragment',
@@ -1155,47 +1175,54 @@
             }
 
             static createAngularFragment(name, size) {
-                const irregularity = 0.3 + Math.random() * 0.4;
-                return BABYLON.MeshBuilder.CreateBox(name, {
+                const fragment = BABYLON.MeshBuilder.CreateBox(name, {
                     width: size * (0.6 + Math.random() * 0.8),
                     height: size * (0.6 + Math.random() * 0.8),
                     depth: size * (0.6 + Math.random() * 0.8)
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.3);
+                return fragment;
             }
 
             static createCrystallineFragment(name, size) {
-                const sides = 6 + Math.floor(Math.random() * 6);
-                return BABYLON.MeshBuilder.CreateCylinder(name, {
+                const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
                     height: size * (0.8 + Math.random() * 1.2),
                     diameterTop: size * (0.2 + Math.random() * 0.3),
                     diameterBottom: size * (0.4 + Math.random() * 0.4),
                     tessellation: sides
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.25);
+                return fragment;
             }
 
             static createGeometricFragment(name, size) {
                 const shapes = ['Box', 'Sphere', 'Cylinder'];
                 const shapeType = shapes[Math.floor(Math.random() * shapes.length)];
-                
+                let fragment;
                 switch (shapeType) {
                     case 'Box':
-                        return BABYLON.MeshBuilder.CreateBox(name, {
+                        fragment = BABYLON.MeshBuilder.CreateBox(name, {
                             width: size * (0.4 + Math.random() * 0.6),
                             height: size * (0.4 + Math.random() * 0.6),
                             depth: size * (0.4 + Math.random() * 0.6)
                         }, scene);
+                        break;
                     case 'Cylinder':
-                        return BABYLON.MeshBuilder.CreateCylinder(name, {
+                        fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
                             height: size * (0.6 + Math.random() * 0.8),
                             diameter: size * (0.5 + Math.random() * 0.3),
                             tessellation: 8 + Math.floor(Math.random() * 8)
                         }, scene);
+                        break;
                     default:
-                        return BABYLON.MeshBuilder.CreateSphere(name, {
+                        fragment = BABYLON.MeshBuilder.CreateSphere(name, {
                             diameter: size * (0.6 + Math.random() * 0.8),
                             segments: 8 + Math.floor(Math.random() * 8)
                         }, scene);
+                        break;
                 }
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.35);
+                return fragment;
             }
 
             static createShearedFragment(name, size) {
@@ -1207,15 +1234,18 @@
                 
                 fragment.rotation.x = (Math.random() - 0.5) * 0.8;
                 fragment.rotation.z = (Math.random() - 0.5) * 0.8;
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.2);
                 return fragment;
             }
 
             static createFibrousFragment(name, size) {
-                return BABYLON.MeshBuilder.CreateCylinder(name, {
-                    height: size * (1.5 + Math.random() * 2),
+                const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
+                    height: size * (1.5 + Math.random() * 2), // Here size is more like length
                     diameter: size * (0.1 + Math.random() * 0.2),
                     tessellation: 6
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size * 0.5, 0.15); // Use diameter-related size for displacement
+                return fragment;
             }
 
             static createFluidFragment(name, size) {
@@ -1224,22 +1254,27 @@
                     segments: 6
                 }, scene);
                 
+                // This function already has vertex displacement logic.
                 const positions = fragment.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-                for (let i = 0; i < positions.length; i += 3) {
-                    positions[i] += (Math.random() - 0.5) * size * 0.1;
-                    positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
-                    positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                if (positions) { // Check if positions exist
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i] += (Math.random() - 0.5) * size * 0.1; // Existing factor is 0.1
+                        positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
+                        positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                    }
+                    fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
                 }
-                fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
                 
                 return fragment;
             }
 
             static createGenericFragment(name, size) {
-                return BABYLON.MeshBuilder.CreateSphere(name, {
+                const fragment = BABYLON.MeshBuilder.CreateSphere(name, {
                     diameter: size * (0.5 + Math.random() * 0.5),
                     segments: 8
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.4);
+                return fragment;
             }
 
             static createFallbackFragment(size, index) {
@@ -1248,6 +1283,10 @@
                         diameter: size,
                         segments: 6
                     }, scene);
+                    // Add displacement here too, as it's a fallback for errors
+                    if (fragment) { // Check if fragment was created
+                        AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.3);
+                    }
                     return fragment;
                 } catch (error) {
                     logToScreen(`Error creating fallback fragment: ${error.message}`, "error");
@@ -1255,24 +1294,39 @@
                 }
             }
 
-            static createEnhancedFragmentMaterial(material, index, energyRatio) {
+            static createEnhancedFragmentMaterial(material, index, fragmentEnergy) {
                 if (!scene) return null;
                 
                 try {
                     const fragmentMat = new BABYLON.StandardMaterial(`fragment_mat_${index}`, scene);
                     
-                    const baseColor = BABYLON.Color3.FromHexString(material.color);
-                    const heatVariation = energyRatio * 0.5;
-                    const randomVariation = 0.2;
+                    const maxEnergyForColorMapping = 20000; // Tunable: max energy for color scale
+                    const normalizedEnergy = Math.min(Math.max(0, fragmentEnergy), maxEnergyForColorMapping) / maxEnergyForColorMapping;
+
+                    let r = 0, g = 0, b = 0;
+                    if (normalizedEnergy < 0.5) { // Transition from Blue to Green
+                        b = 1.0 - (normalizedEnergy * 2);
+                        g = normalizedEnergy * 2;
+                    } else { // Transition from Green to Red
+                        g = 1.0 - ((normalizedEnergy - 0.5) * 2);
+                        r = (normalizedEnergy - 0.5) * 2;
+                    }
+                    r = Math.max(0, Math.min(1, r));
+                    g = Math.max(0, Math.min(1, g));
+                    b = Math.max(0, Math.min(1, b));
+
+                    const baseEmissiveIntensity = material.emissive * 0.5; // Base glow from material property
+                    const stressIntensity = 0.8; // Max intensity for stress coloring
                     
-                    fragmentMat.diffuseColor = new BABYLON.Color3(
-                        Math.max(0, Math.min(1, baseColor.r + heatVariation + (Math.random() - 0.5) * randomVariation)),
-                        Math.max(0, Math.min(1, baseColor.g + (Math.random() - 0.5) * randomVariation)),
-                        Math.max(0, Math.min(1, baseColor.b + (Math.random() - 0.5) * randomVariation))
+                    fragmentMat.emissiveColor = new BABYLON.Color3(
+                        baseEmissiveIntensity + r * stressIntensity,
+                        baseEmissiveIntensity + g * stressIntensity,
+                        baseEmissiveIntensity + b * stressIntensity
                     );
                     
-                    fragmentMat.emissiveColor = fragmentMat.diffuseColor.scale(material.emissive + heatVariation * 0.3);
-                    fragmentMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                    // Ensure diffuseColor is not overly bright to let emissive show
+                    fragmentMat.diffuseColor = BABYLON.Color3.FromHexString(material.color).scale(0.7);
+                    fragmentMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
                     
                     return fragmentMat;
                 } catch (error) {
@@ -1281,7 +1335,9 @@
                 }
             }
 
-            static setupFragmentPhysics(fragment, mass, material, energy) {
+            static setupFragmentPhysics(fragment, mass, material, energy, parentAngularVelocity, fragmentRelativePosition) {
+                parentAngularVelocity = parentAngularVelocity || BABYLON.Vector3.Zero();
+                fragmentRelativePosition = fragmentRelativePosition || BABYLON.Vector3.Zero();
                 try {
                     fragment.physicsImpostor = new BABYLON.PhysicsImpostor(
                         fragment,
@@ -1301,14 +1357,20 @@
                     ).normalize();
                     
                     const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
-                    fragment.physicsImpostor.setLinearVelocity(explosionDirection.scale(explosionSpeed));
+                    const explosionVelocity = explosionDirection.scale(explosionSpeed);
+
+                    const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition);
+                    const finalLinearVelocity = explosionVelocity.add(tangentialVelocity);
+                    fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
                     
-                    const angularVelocity = new BABYLON.Vector3(
+                    const randomAngularVelocity = new BABYLON.Vector3(
                         (Math.random() - 0.5) * 10,
                         (Math.random() - 0.5) * 10,
                         (Math.random() - 0.5) * 10
                     );
-                    fragment.physicsImpostor.setAngularVelocity(angularVelocity);
+                    const inheritedSpin = parentAngularVelocity.scale(0.2 + Math.random() * 0.3);
+                    const finalAngularVelocity = inheritedSpin.add(randomAngularVelocity);
+                    fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
                     
                 } catch (error) {
                     logToScreen(`Error setting up fragment physics: ${error.message}`, "error");
@@ -1445,11 +1507,12 @@
                         energy
                     );
                     
+                    const parentAngularVelocity = body.physicsImpostor ? body.physicsImpostor.getAngularVelocity() : BABYLON.Vector3.Zero();
                     let fragmentCount = 0;
                     voronoiPoints.forEach((point, index) => {
                         if (fragmentBodies.length < PHYSICS_CONSTANTS.MAX_FRAGMENTS) {
                             const fragment = AdvancedFractureEngine.createRealisticFragment(
-                                body, point, material, index, energy
+                                body, point, material, index, energy, parentAngularVelocity
                             );
                             if (fragment) {
                                 fragmentCount++;
