@@ -1024,10 +1024,26 @@
                 
                 const energyMultiplier = Math.max(1, Math.log10(energy / PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY + 1));
                 const fragmentMultiplier = parseFloat(document.getElementById('fragment-multiplier')?.value || 1);
+
+                let calculatedNumPoints = Math.round(basePoints * energyMultiplier * fragmentMultiplier);
+
+                if (calculatedNumPoints <= 0) {
+                    logToScreen(`[Debug] generateVoronoiPattern: calculatedNumPoints is ${calculatedNumPoints} for ${material.name}. Returning empty points array.`, "info");
+                    return []; // If no points are to be generated, return an empty array.
+                }
+
                 const numPoints = Math.min(
                     PHYSICS_CONSTANTS.MAX_FRAGMENTS / 2,
-                    Math.round(basePoints * energyMultiplier * fragmentMultiplier)
+                    calculatedNumPoints
                 );
+
+                // This check might now be redundant if the above handles calculatedNumPoints <= 0,
+                // but as a safeguard, ensure numPoints is positive before use.
+                if (numPoints <= 0) {
+                     logToScreen(`[Debug] generateVoronoiPattern: numPoints is ${numPoints} (after min with MAX_FRAGMENTS) for ${material.name}. Returning empty points array.`, "info");
+                    return [];
+                }
+                logToScreen(`[Debug] generateVoronoiPattern: numPoints = ${numPoints} for ${material.name}`, "info");
                 
                 const points = [];
                 for (let i = 0; i < numPoints; i++) {
@@ -1356,21 +1372,44 @@
                         (Math.random() - 0.5) * 2
                     ).normalize();
                     
-                    const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
-                    const explosionVelocity = explosionDirection.scale(explosionSpeed);
+                    // Comment out ALL existing calculations for finalLinearVelocity and finalAngularVelocity
+                    // const explosionDirection = new BABYLON.Vector3(
+                    //     (Math.random() - 0.5) * 2,
+                    //     (Math.random() - 0.5) * 2,
+                    //     (Math.random() - 0.5) * 2
+                    // ).normalize();
+                    // const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
+                    // const explosionVelocity = explosionDirection.scale(explosionSpeed);
 
-                    const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition);
-                    const finalLinearVelocity = explosionVelocity.add(tangentialVelocity);
-                    fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
-                    
-                    const randomAngularVelocity = new BABYLON.Vector3(
-                        (Math.random() - 0.5) * 10,
-                        (Math.random() - 0.5) * 10,
-                        (Math.random() - 0.5) * 10
-                    );
-                    const inheritedSpin = parentAngularVelocity.scale(0.2 + Math.random() * 0.3);
-                    const finalAngularVelocity = inheritedSpin.add(randomAngularVelocity);
-                    fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
+                    // const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition);
+                    // const finalLinearVelocity = tangentialVelocity.scale(2.5); // Only use amplified tangential velocity
+                    // logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying isolated tangentialLinearVelocity: ${finalLinearVelocity.toString()}`, "info");
+                    // fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
+
+                    // const randomAngularVelocity = new BABYLON.Vector3(
+                    //     (Math.random() - 0.5) * 10,
+                    //     (Math.random() - 0.5) * 10,
+                    //     (Math.random() - 0.5) * 10
+                    // );
+                    // const inheritedSpin = parentAngularVelocity.scale(0.6 + Math.random() * 0.4);
+                    // const finalAngularVelocity = inheritedSpin;
+                    // logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying isolated inheritedAngularVelocity: ${finalAngularVelocity.toString()}`, "info");
+                    // fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
+
+                    const hardcodedLinearVelocity = new BABYLON.Vector3(15, 3, 0); // Example: move somewhat up and to the right
+                    const hardcodedAngularVelocity = new BABYLON.Vector3(0, 0.5, 0); // Example: spin around Y axis
+
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying HARDCODED LinearVelocity: ${hardcodedLinearVelocity.toString()}`, "info");
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying HARDCODED AngularVelocity: ${hardcodedAngularVelocity.toString()}`, "info");
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Mass: ${mass.toFixed(4)}`, "info");
+
+
+                    if (fragment.physicsImpostor) {
+                        fragment.physicsImpostor.setLinearVelocity(hardcodedLinearVelocity);
+                        fragment.physicsImpostor.setAngularVelocity(hardcodedAngularVelocity);
+                    } else {
+                        logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: ERROR - No physics impostor found to set velocities!`, "error");
+                    }
                     
                 } catch (error) {
                     logToScreen(`Error setting up fragment physics: ${error.message}`, "error");
@@ -1462,12 +1501,16 @@
                     
                     const shouldFragment1 = this.shouldObjectFragment(body1, collisionEnergy);
                     const shouldFragment2 = this.shouldObjectFragment(body2, collisionEnergy);
+                    logToScreen(`[Debug] handleCollision: ${body1.initialParams.name} shouldFragment1=${shouldFragment1}`, "info");
+                    logToScreen(`[Debug] handleCollision: ${body2.initialParams.name} shouldFragment2=${shouldFragment2}`, "info");
                     
                     if (shouldFragment1) {
+                        logToScreen(`[Debug] Calling fragmentObject for ${body1.initialParams.name}`, "info");
                         this.fragmentObject(body1, collisionEnergy, body2);
                     }
                     
                     if (shouldFragment2) {
+                        logToScreen(`[Debug] Calling fragmentObject for ${body2.initialParams.name}`, "info");
                         this.fragmentObject(body2, collisionEnergy, body1);
                     }
                     
@@ -1492,6 +1535,7 @@
                 const materialResistance = material.tensileStrength * material.ductility;
                 const adjustedThreshold = destructionThreshold * (materialResistance / 100e6);
                 
+                logToScreen(`[Debug] shouldFragment? ${body.initialParams.name}: E=${energy.toFixed(2)}, UIThresh=${destructionThreshold.toFixed(2)}, MatRes=${materialResistance.toFixed(2)}, AdjThresh=${adjustedThreshold.toFixed(2)} -> ${energy > adjustedThreshold}`, "info");
                 return energy > adjustedThreshold;
             }
 
@@ -1507,6 +1551,12 @@
                         energy
                     );
                     
+                    // Remove or comment out the temporary artificial angular velocity
+                    // if (body.physicsImpostor) {
+                    //     const testAngularVelocity = new BABYLON.Vector3(0, 2, 0); // Spin around Y axis
+                    //     body.physicsImpostor.setAngularVelocity(testAngularVelocity);
+                    //     logToScreen(`[Debug] Applied TEMPORARY angular velocity ${testAngularVelocity.toString()} to ${body.initialParams.name}`, "info");
+                    // }
                     const parentAngularVelocity = body.physicsImpostor ? body.physicsImpostor.getAngularVelocity() : BABYLON.Vector3.Zero();
                     let fragmentCount = 0;
                     voronoiPoints.forEach((point, index) => {
@@ -2519,8 +2569,13 @@
         
         function setupCollisionDetection() {
             scene.onBeforeRenderObservable.add(() => {
-                if (simulationState !== 'RUNNING') return;
-                
+                // TEMPORARY DEBUG: Bypassing simulationState check
+                // if (simulationState !== 'RUNNING') {
+                //     logToScreen(`[Debug] Observable: simState=${simulationState}`, "info");
+                //     // return; // DON'T return for this test
+                // }
+                logToScreen(`[Debug] Observable running. State=${simulationState}`, "info"); // Log that observable is running
+
                 // Clear trajectory lines
                 while(trajectoryLines.length) {
                     trajectoryLines.pop().dispose();
@@ -2533,7 +2588,10 @@
                         const body2 = celestialBodies[j];
                         
                         if (body1.physicsImpostor && body2.physicsImpostor) {
+                            // Add a log *before* intersectsMesh
+                            logToScreen(`[Debug] Checking collision: ${body1.name || body1.id} vs ${body2.name || body2.id}`, "info");
                             if (body1.intersectsMesh(body2, false)) {
+                                logToScreen(`[Debug] intersectsMesh TRUE for ${body1.name || body1.id} vs ${body2.name || body2.id}`, "info");
                                 CollisionSystem.handleCollision(body1, body2);
                             } else {
                                 // Draw trajectory line if bodies are approaching each other
