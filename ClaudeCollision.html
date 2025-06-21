@@ -1354,65 +1354,68 @@
             static setupFragmentPhysics(fragment, mass, material, energy, parentAngularVelocity, fragmentRelativePosition) {
                 parentAngularVelocity = parentAngularVelocity || BABYLON.Vector3.Zero();
                 fragmentRelativePosition = fragmentRelativePosition || BABYLON.Vector3.Zero();
+
                 try {
                     fragment.physicsImpostor = new BABYLON.PhysicsImpostor(
                         fragment,
                         BABYLON.PhysicsImpostor.SphereImpostor,
                         {
                             mass: mass,
-                            restitution: 0.3 + material.ductility * 0.4,
-                            friction: 0.6 + material.ductility * 0.3
+                            restitution: 0.3 + material.ductility * 0.4, // Tuned based on material
+                            friction: 0.6 + material.ductility * 0.3  // Tuned based on material
                         },
                         scene
                     );
-                    
+
+                    // 1. Restore and Tune Explosion Speed
                     const explosionDirection = new BABYLON.Vector3(
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2
                     ).normalize();
+
+                    let explosionSpeed = 0;
+                    if (mass > 0 && energy > 0) {
+                        explosionSpeed = Math.sqrt(energy / mass) * 2.5; // Significantly increased multiplier
+                    } else {
+                        logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Invalid mass (${mass.toFixed(4)}) or energy (${energy.toFixed(4)}) for explosion. Setting zero explosion speed.`, "warn");
+                    }
+                    const explosionVelocity = explosionDirection.scale(explosionSpeed);
+
+                    // 2. Restore Tangential Velocity with Amplification
+                    const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition);
+
+                    // 3. Combine Linear Velocities
+                    const finalLinearVelocity = explosionVelocity.add(tangentialVelocity.scale(2.5)); // Amplified tangential
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying finalLinearVelocity: ${finalLinearVelocity.toString()}`, "info");
                     
-                    // Comment out ALL existing calculations for finalLinearVelocity and finalAngularVelocity
-                    // const explosionDirection = new BABYLON.Vector3(
-                    //     (Math.random() - 0.5) * 2,
-                    //     (Math.random() - 0.5) * 2,
-                    //     (Math.random() - 0.5) * 2
-                    // ).normalize();
-                    // const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
-                    // const explosionVelocity = explosionDirection.scale(explosionSpeed);
+                    // 4. Restore Inherited Spin with Amplification
+                    const inheritedSpin = parentAngularVelocity.scale(0.6 + Math.random() * 0.4); // Amplified inherited spin
 
-                    // const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition);
-                    // const finalLinearVelocity = tangentialVelocity.scale(2.5); // Only use amplified tangential velocity
-                    // logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying isolated tangentialLinearVelocity: ${finalLinearVelocity.toString()}`, "info");
-                    // fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
+                    // 5. Restore Random Angular Velocity
+                    const randomAngularVelocity = new BABYLON.Vector3(
+                        (Math.random() - 0.5) * 10, // Original magnitude
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10
+                    );
 
-                    // const randomAngularVelocity = new BABYLON.Vector3(
-                    //     (Math.random() - 0.5) * 10,
-                    //     (Math.random() - 0.5) * 10,
-                    //     (Math.random() - 0.5) * 10
-                    // );
-                    // const inheritedSpin = parentAngularVelocity.scale(0.6 + Math.random() * 0.4);
-                    // const finalAngularVelocity = inheritedSpin;
-                    // logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying isolated inheritedAngularVelocity: ${finalAngularVelocity.toString()}`, "info");
-                    // fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
+                    // 6. Combine Angular Velocities
+                    const finalAngularVelocity = inheritedSpin.add(randomAngularVelocity);
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying finalAngularVelocity: ${finalAngularVelocity.toString()}`, "info");
 
-                    const hardcodedLinearVelocity = new BABYLON.Vector3(15, 3, 0); // Example: move somewhat up and to the right
-                    const hardcodedAngularVelocity = new BABYLON.Vector3(0, 0.5, 0); // Example: spin around Y axis
-
-                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying HARDCODED LinearVelocity: ${hardcodedLinearVelocity.toString()}`, "info");
-                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying HARDCODED AngularVelocity: ${hardcodedAngularVelocity.toString()}`, "info");
+                    // Log fragment mass
                     logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Mass: ${mass.toFixed(4)}`, "info");
 
-
+                    // 7. Apply Velocities
                     if (fragment.physicsImpostor) {
-                        fragment.physicsImpostor.setLinearVelocity(hardcodedLinearVelocity);
-                        fragment.physicsImpostor.setAngularVelocity(hardcodedAngularVelocity);
+                        fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
+                        fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
                     } else {
                         logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: ERROR - No physics impostor found to set velocities!`, "error");
                     }
                     
                 } catch (error) {
-                    logToScreen(`Error setting up fragment physics: ${error.message}`, "error");
+                    logToScreen(`Error setting up fragment physics for ${fragment.name || fragment.id}: ${error.message}`, "error");
                 }
             }
 
@@ -1551,12 +1554,7 @@
                         energy
                     );
                     
-                    // Remove or comment out the temporary artificial angular velocity
-                    // if (body.physicsImpostor) {
-                    //     const testAngularVelocity = new BABYLON.Vector3(0, 2, 0); // Spin around Y axis
-                    //     body.physicsImpostor.setAngularVelocity(testAngularVelocity);
-                    //     logToScreen(`[Debug] Applied TEMPORARY angular velocity ${testAngularVelocity.toString()} to ${body.initialParams.name}`, "info");
-                    // }
+                    // Temporary artificial angular velocity REMOVED for finalization.
                     const parentAngularVelocity = body.physicsImpostor ? body.physicsImpostor.getAngularVelocity() : BABYLON.Vector3.Zero();
                     let fragmentCount = 0;
                     voronoiPoints.forEach((point, index) => {
