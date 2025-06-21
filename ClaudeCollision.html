@@ -755,6 +755,7 @@
         let advancedFracture = true;
         let currentScenario = null;
         let trajectoryLines = [];
+        let isCinematicViewActive = false;
 
         // Physics and Simulation Constants
         const PHYSICS_CONSTANTS = {
@@ -1482,7 +1483,20 @@
                     logToScreen(`Collision detected between ${body1.initialParams.name} and ${body2.initialParams.name}`, "info");
                     
                     const collisionEnergy = PhysicsCalculator.calculateCollisionEnergy(body1, body2);
-                    const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2);
+                    const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2); // Assuming this is still calculated here
+
+                    // --- NEW CINEMATIC TRIGGER LOGIC (Combined Step) ---
+                    const cinematicEnergyThreshold = PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY * 0.5;
+                    logToScreen(`[CinematicCheck] Active: ${isCinematicViewActive}, Energy: ${collisionEnergy.toFixed(0)}, Threshold: ${cinematicEnergyThreshold.toFixed(0)}`, "info");
+
+                    if (!isCinematicViewActive && collisionEnergy > cinematicEnergyThreshold) {
+                        // Set flag immediately
+                        isCinematicViewActive = true;
+                        logToScreen(`[Cinematic] Significant collision! Energy: ${collisionEnergy.toFixed(0)}. CINEMATIC SEQUENCE TRIGGERED.`, "info");
+                        // Call the NEW function defined in Part C
+                        initiateCinematicSequence(body1, body2, collisionEnergy, impactAngle);
+                    }
+                    // --- END NEW CINEMATIC TRIGGER LOGIC ---
                     
                     destructionStats.totalImpacts++;
                     destructionStats.totalEnergyReleased += collisionEnergy;
@@ -1656,6 +1670,93 @@
                     logToScreen(`Error removing body: ${error.message}`, "error");
                 }
             }
+        }
+
+        function initiateCinematicSequence(body1, body2, collisionEnergy, impactAngle) {
+            logToScreen(`[Cinematic] initiateCinematicSequence called. Energy: ${collisionEnergy.toFixed(0)}`, "info");
+
+            if (!camera || !scene) {
+                logToScreen("[Cinematic] Camera or Scene not available. Aborting cinematic.", "error");
+                isCinematicViewActive = false; // Reset flag
+                return;
+            }
+            const canvas = scene.getEngine().getRenderingCanvas();
+
+            // 1. Store camera's current state (more properties might be needed later)
+            const previousCameraState = {
+                position: camera.position.clone(),
+                target: camera.target.clone(),
+                fov: camera.fov,
+                // Potentially store activeSttachedControl if needed to restore specific control type
+            };
+            const previousTimeScale = timeScale; // Store current timeScale
+            logToScreen(`[Cinematic] Stored previous timeScale: ${previousTimeScale}`, "info");
+            logToScreen(`[Cinematic] Stored camera state: Pos=${previousCameraState.position.toString()}, Target=${previousCameraState.target.toString()}`, "info");
+
+            // 2. Temporarily disable user camera controls
+            if (canvas) { // Ensure canvas exists
+                camera.detachControl(canvas);
+                logToScreen("[Cinematic] User camera controls detached.", "info");
+            } else {
+                logToScreen("[Cinematic] Canvas not found, cannot detach controls.", "warn");
+            }
+
+            const collisionPoint = body1.position.add(body2.position).scale(0.5); // Approximate collision point
+            logToScreen(`[Cinematic] Approx. collision point for animation: ${collisionPoint.toString()}`, "info");
+
+            // Calculate Cinematic Camera Position
+            const baseOffsetDistance = 200 + (body1.initialParams.size + body2.initialParams.size) * 1.5;
+            let viewDirection = collisionPoint.subtract(previousCameraState.position);
+            if (viewDirection.lengthSquared() < 0.01) {
+                viewDirection = new BABYLON.Vector3(0, 0, -1);
+            }
+            viewDirection.normalize();
+            let newCameraPosition = collisionPoint.subtract(viewDirection.scale(baseOffsetDistance));
+            newCameraPosition = newCameraPosition.add(new BABYLON.Vector3(baseOffsetDistance * 0.2, baseOffsetDistance * 0.1, 0));
+            // UNIQUE LOG MARKER FOR THIS ATTEMPT:
+            logToScreen(`[CineAnim_V2] Calculated new camera position: ${newCameraPosition.toString()}`, "info");
+
+            // Create and Run Babylon.js Animations
+            const frameRate = 30;
+            const animationDurationSeconds = 0.75;
+            const totalFrames = frameRate * animationDurationSeconds;
+
+            camera.animations = []; // Clear existing animations
+
+            const animCamPosition = new BABYLON.Animation("cinematicCamPosAnim_V2", "position", frameRate, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+            const keysPos = [{ frame: 0, value: previousCameraState.position }, { frame: totalFrames, value: newCameraPosition }];
+            animCamPosition.setKeys(keysPos);
+
+            const animCamTarget = new BABYLON.Animation("cinematicCamTargetAnim_V2", "target", frameRate, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+            const keysTarget = [{ frame: 0, value: previousCameraState.target }, { frame: totalFrames, value: collisionPoint }];
+            animCamTarget.setKeys(keysTarget);
+
+            const easingFunction = new BABYLON.CircleEase();
+            easingFunction.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+            animCamPosition.setEasingFunction(easingFunction);
+            animCamTarget.setEasingFunction(easingFunction);
+
+            camera.animations.push(animCamPosition);
+            camera.animations.push(animCamTarget);
+
+            logToScreen("[CineAnim_V2] Starting camera animation to cinematic viewpoint.", "info");
+            scene.beginAnimation(camera, 0, totalFrames, false, 1.0, () => {
+                logToScreen("[CineAnim_V2] Camera animation to viewpoint complete.", "info");
+
+                // --- Activate Slow Motion ---
+                timeScale = 0.1; // Set desired slow-motion factor
+                logToScreen(`[Cinematic] Slow motion activated. New timeScale: ${timeScale}`, "info");
+                // --- End Slow Motion Activation ---
+
+                // For now, set a timeout to simulate cinematic duration and reset the flag
+                // This will be expanded in future steps to include actual camera movement back etc.
+                setTimeout(() => {
+                    logToScreen("[Cinematic] Post-animation: Sequence placeholder duration ended. Resetting flag.", "info");
+                    // TODO: Restore camera to previousCameraState (will be in a later plan step)
+                    // TODO: Re-attach controls (will be in a later plan step)
+                    isCinematicViewActive = false;
+                }, 4250); // (5000ms total - 750ms animation)
+            });
         }
 
         // Performance and Monitoring System
@@ -2567,12 +2668,7 @@
         
         function setupCollisionDetection() {
             scene.onBeforeRenderObservable.add(() => {
-                // TEMPORARY DEBUG: Bypassing simulationState check
-                // if (simulationState !== 'RUNNING') {
-                //     logToScreen(`[Debug] Observable: simState=${simulationState}`, "info");
-                //     // return; // DON'T return for this test
-                // }
-                logToScreen(`[Debug] Observable running. State=${simulationState}`, "info"); // Log that observable is running
+                if (simulationState !== 'RUNNING') return; // Ensure this check is active
 
                 // Clear trajectory lines
                 while(trajectoryLines.length) {
