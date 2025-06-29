@@ -755,6 +755,8 @@
         let advancedFracture = true;
         let currentScenario = null;
         let trajectoryLines = [];
+        let isCinematicViewActive = false;
+        let timeScaleBeforePause = 1.0;
 
         // Physics and Simulation Constants
         const PHYSICS_CONSTANTS = {
@@ -1024,10 +1026,26 @@
                 
                 const energyMultiplier = Math.max(1, Math.log10(energy / PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY + 1));
                 const fragmentMultiplier = parseFloat(document.getElementById('fragment-multiplier')?.value || 1);
+
+                let calculatedNumPoints = Math.round(basePoints * energyMultiplier * fragmentMultiplier);
+
+                if (calculatedNumPoints <= 0) {
+                    logToScreen(`[Debug] generateVoronoiPattern: calculatedNumPoints is ${calculatedNumPoints} for ${material.name}. Returning empty points array.`, "info");
+                    return []; // If no points are to be generated, return an empty array.
+                }
+
                 const numPoints = Math.min(
                     PHYSICS_CONSTANTS.MAX_FRAGMENTS / 2,
-                    Math.round(basePoints * energyMultiplier * fragmentMultiplier)
+                    calculatedNumPoints
                 );
+
+                // This check might now be redundant if the above handles calculatedNumPoints <= 0,
+                // but as a safeguard, ensure numPoints is positive before use.
+                if (numPoints <= 0) {
+                     logToScreen(`[Debug] generateVoronoiPattern: numPoints is ${numPoints} (after min with MAX_FRAGMENTS) for ${material.name}. Returning empty points array.`, "info");
+                    return [];
+                }
+                logToScreen(`[Debug] generateVoronoiPattern: numPoints = ${numPoints} for ${material.name}`, "info");
                 
                 const points = [];
                 for (let i = 0; i < numPoints; i++) {
@@ -1079,7 +1097,26 @@
                 }
             }
 
-            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy) {
+            static applyVertexDisplacement(mesh, size, displacementScaleFactor) {
+                if (!mesh) return;
+                const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                if (!positions) return;
+
+                const displacementAmount = size * displacementScaleFactor;
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] += (Math.random() - 0.5) * displacementAmount;
+                    positions[i + 1] += (Math.random() - 0.5) * displacementAmount;
+                    positions[i + 2] += (Math.random() - 0.5) * displacementAmount;
+                }
+                mesh.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+                // Optional: Recalculate normals if lighting is critical for these fragments
+                // const normals = [];
+                // BABYLON.VertexData.ComputeNormals(positions, mesh.getIndices(), normals);
+                // mesh.setVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+            }
+
+            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy, parentAngularVelocity) {
                 if (!scene) {
                     logToScreen("Error: Scene not available in createRealisticFragment", "error");
                     return null;
@@ -1099,10 +1136,11 @@
                     
                     if (fragmentMesh) {
                         fragmentMesh.position = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z);
-                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, energyRatio);
+                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, voronoiPoint.energy);
                         
                         const fragmentMass = originalMesh.initialParams.mass * energyRatio * 0.1;
-                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy);
+                        const fragmentRelativePosition = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z).subtract(originalMesh.position);
+                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy, parentAngularVelocity, fragmentRelativePosition);
                         
                         fragmentMesh.initialParams = {
                             name: 'fragment',
@@ -1155,47 +1193,58 @@
             }
 
             static createAngularFragment(name, size) {
-                const irregularity = 0.3 + Math.random() * 0.4;
-                return BABYLON.MeshBuilder.CreateBox(name, {
+                const fragment = BABYLON.MeshBuilder.CreateBox(name, {
                     width: size * (0.6 + Math.random() * 0.8),
                     height: size * (0.6 + Math.random() * 0.8),
                     depth: size * (0.6 + Math.random() * 0.8)
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.3);
+                return fragment;
             }
 
             static createCrystallineFragment(name, size) {
-                const sides = 6 + Math.floor(Math.random() * 6);
-                return BABYLON.MeshBuilder.CreateCylinder(name, {
+                const sides = 6 + Math.floor(Math.random() * 6); // Define sides
+                const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
                     height: size * (0.8 + Math.random() * 1.2),
                     diameterTop: size * (0.2 + Math.random() * 0.3),
                     diameterBottom: size * (0.4 + Math.random() * 0.4),
-                    tessellation: sides
+                    tessellation: sides // Use defined sides for tessellation
                 }, scene);
+                // Assuming applyVertexDisplacement is correctly defined and called as per previous steps
+                if (typeof AdvancedFractureEngine.applyVertexDisplacement === 'function') {
+                    AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.25);
+                }
+                return fragment;
             }
 
             static createGeometricFragment(name, size) {
                 const shapes = ['Box', 'Sphere', 'Cylinder'];
                 const shapeType = shapes[Math.floor(Math.random() * shapes.length)];
-                
+                let fragment;
                 switch (shapeType) {
                     case 'Box':
-                        return BABYLON.MeshBuilder.CreateBox(name, {
+                        fragment = BABYLON.MeshBuilder.CreateBox(name, {
                             width: size * (0.4 + Math.random() * 0.6),
                             height: size * (0.4 + Math.random() * 0.6),
                             depth: size * (0.4 + Math.random() * 0.6)
                         }, scene);
+                        break;
                     case 'Cylinder':
-                        return BABYLON.MeshBuilder.CreateCylinder(name, {
+                        fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
                             height: size * (0.6 + Math.random() * 0.8),
                             diameter: size * (0.5 + Math.random() * 0.3),
                             tessellation: 8 + Math.floor(Math.random() * 8)
                         }, scene);
+                        break;
                     default:
-                        return BABYLON.MeshBuilder.CreateSphere(name, {
+                        fragment = BABYLON.MeshBuilder.CreateSphere(name, {
                             diameter: size * (0.6 + Math.random() * 0.8),
                             segments: 8 + Math.floor(Math.random() * 8)
                         }, scene);
+                        break;
                 }
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.35);
+                return fragment;
             }
 
             static createShearedFragment(name, size) {
@@ -1207,15 +1256,18 @@
                 
                 fragment.rotation.x = (Math.random() - 0.5) * 0.8;
                 fragment.rotation.z = (Math.random() - 0.5) * 0.8;
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.2);
                 return fragment;
             }
 
             static createFibrousFragment(name, size) {
-                return BABYLON.MeshBuilder.CreateCylinder(name, {
-                    height: size * (1.5 + Math.random() * 2),
+                const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
+                    height: size * (1.5 + Math.random() * 2), // Here size is more like length
                     diameter: size * (0.1 + Math.random() * 0.2),
                     tessellation: 6
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size * 0.5, 0.15); // Use diameter-related size for displacement
+                return fragment;
             }
 
             static createFluidFragment(name, size) {
@@ -1224,22 +1276,27 @@
                     segments: 6
                 }, scene);
                 
+                // This function already has vertex displacement logic.
                 const positions = fragment.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-                for (let i = 0; i < positions.length; i += 3) {
-                    positions[i] += (Math.random() - 0.5) * size * 0.1;
-                    positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
-                    positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                if (positions) { // Check if positions exist
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i] += (Math.random() - 0.5) * size * 0.1; // Existing factor is 0.1
+                        positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
+                        positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                    }
+                    fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
                 }
-                fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
                 
                 return fragment;
             }
 
             static createGenericFragment(name, size) {
-                return BABYLON.MeshBuilder.CreateSphere(name, {
+                const fragment = BABYLON.MeshBuilder.CreateSphere(name, {
                     diameter: size * (0.5 + Math.random() * 0.5),
                     segments: 8
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.4);
+                return fragment;
             }
 
             static createFallbackFragment(size, index) {
@@ -1248,6 +1305,10 @@
                         diameter: size,
                         segments: 6
                     }, scene);
+                    // Add displacement here too, as it's a fallback for errors
+                    if (fragment) { // Check if fragment was created
+                        AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.3);
+                    }
                     return fragment;
                 } catch (error) {
                     logToScreen(`Error creating fallback fragment: ${error.message}`, "error");
@@ -1255,24 +1316,39 @@
                 }
             }
 
-            static createEnhancedFragmentMaterial(material, index, energyRatio) {
+            static createEnhancedFragmentMaterial(material, index, fragmentEnergy) {
                 if (!scene) return null;
                 
                 try {
                     const fragmentMat = new BABYLON.StandardMaterial(`fragment_mat_${index}`, scene);
                     
-                    const baseColor = BABYLON.Color3.FromHexString(material.color);
-                    const heatVariation = energyRatio * 0.5;
-                    const randomVariation = 0.2;
+                    const maxEnergyForColorMapping = 20000; // Tunable: max energy for color scale
+                    const normalizedEnergy = Math.min(Math.max(0, fragmentEnergy), maxEnergyForColorMapping) / maxEnergyForColorMapping;
+
+                    let r = 0, g = 0, b = 0;
+                    if (normalizedEnergy < 0.5) { // Transition from Blue to Green
+                        b = 1.0 - (normalizedEnergy * 2);
+                        g = normalizedEnergy * 2;
+                    } else { // Transition from Green to Red
+                        g = 1.0 - ((normalizedEnergy - 0.5) * 2);
+                        r = (normalizedEnergy - 0.5) * 2;
+                    }
+                    r = Math.max(0, Math.min(1, r));
+                    g = Math.max(0, Math.min(1, g));
+                    b = Math.max(0, Math.min(1, b));
+
+                    const baseEmissiveIntensity = material.emissive * 0.5; // Base glow from material property
+                    const stressIntensity = 0.8; // Max intensity for stress coloring
                     
-                    fragmentMat.diffuseColor = new BABYLON.Color3(
-                        Math.max(0, Math.min(1, baseColor.r + heatVariation + (Math.random() - 0.5) * randomVariation)),
-                        Math.max(0, Math.min(1, baseColor.g + (Math.random() - 0.5) * randomVariation)),
-                        Math.max(0, Math.min(1, baseColor.b + (Math.random() - 0.5) * randomVariation))
+                    fragmentMat.emissiveColor = new BABYLON.Color3(
+                        baseEmissiveIntensity + r * stressIntensity,
+                        baseEmissiveIntensity + g * stressIntensity,
+                        baseEmissiveIntensity + b * stressIntensity
                     );
                     
-                    fragmentMat.emissiveColor = fragmentMat.diffuseColor.scale(material.emissive + heatVariation * 0.3);
-                    fragmentMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                    // Ensure diffuseColor is not overly bright to let emissive show
+                    fragmentMat.diffuseColor = BABYLON.Color3.FromHexString(material.color).scale(0.7);
+                    fragmentMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
                     
                     return fragmentMat;
                 } catch (error) {
@@ -1281,37 +1357,71 @@
                 }
             }
 
-            static setupFragmentPhysics(fragment, mass, material, energy) {
+            static setupFragmentPhysics(fragment, mass, material, energy, parentAngularVelocity, fragmentRelativePosition) {
+                parentAngularVelocity = parentAngularVelocity || BABYLON.Vector3.Zero();
+                fragmentRelativePosition = fragmentRelativePosition || BABYLON.Vector3.Zero();
+
                 try {
                     fragment.physicsImpostor = new BABYLON.PhysicsImpostor(
                         fragment,
                         BABYLON.PhysicsImpostor.SphereImpostor,
                         {
                             mass: mass,
-                            restitution: 0.3 + material.ductility * 0.4,
-                            friction: 0.6 + material.ductility * 0.3
+                            restitution: 0.3 + material.ductility * 0.4, // Tuned based on material
+                            friction: 0.6 + material.ductility * 0.3  // Tuned based on material
                         },
                         scene
                     );
-                    
+
+                    // 1. Restore and Tune Explosion Speed
                     const explosionDirection = new BABYLON.Vector3(
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2
                     ).normalize();
+
+                    let explosionSpeed = 0;
+                    if (mass > 0 && energy > 0) {
+                        explosionSpeed = Math.sqrt(energy / mass) * 2.5; // Significantly increased multiplier
+                    } else {
+                        logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Invalid mass (${mass.toFixed(4)}) or energy (${energy.toFixed(4)}) for explosion. Setting zero explosion speed.`, "warn");
+                    }
+                    const explosionVelocity = explosionDirection.scale(explosionSpeed);
+
+                    // 2. Restore Tangential Velocity with Amplification
+                    const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition);
+
+                    // 3. Combine Linear Velocities
+                    const finalLinearVelocity = explosionVelocity.add(tangentialVelocity.scale(2.5)); // Amplified tangential
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying finalLinearVelocity: ${finalLinearVelocity.toString()}`, "info");
                     
-                    const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
-                    fragment.physicsImpostor.setLinearVelocity(explosionDirection.scale(explosionSpeed));
-                    
-                    const angularVelocity = new BABYLON.Vector3(
-                        (Math.random() - 0.5) * 10,
+                    // 4. Restore Inherited Spin with Amplification
+                    const inheritedSpin = parentAngularVelocity.scale(0.6 + Math.random() * 0.4); // Amplified inherited spin
+
+                    // 5. Restore Random Angular Velocity
+                    const randomAngularVelocity = new BABYLON.Vector3(
+                        (Math.random() - 0.5) * 10, // Original magnitude
                         (Math.random() - 0.5) * 10,
                         (Math.random() - 0.5) * 10
                     );
-                    fragment.physicsImpostor.setAngularVelocity(angularVelocity);
+
+                    // 6. Combine Angular Velocities
+                    const finalAngularVelocity = inheritedSpin.add(randomAngularVelocity);
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Applying finalAngularVelocity: ${finalAngularVelocity.toString()}`, "info");
+
+                    // Log fragment mass
+                    logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Mass: ${mass.toFixed(4)}`, "info");
+
+                    // 7. Apply Velocities
+                    if (fragment.physicsImpostor) {
+                        fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
+                        fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
+                    } else {
+                        logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: ERROR - No physics impostor found to set velocities!`, "error");
+                    }
                     
                 } catch (error) {
-                    logToScreen(`Error setting up fragment physics: ${error.message}`, "error");
+                    logToScreen(`Error setting up fragment physics for ${fragment.name || fragment.id}: ${error.message}`, "error");
                 }
             }
 
@@ -1378,7 +1488,20 @@
                     logToScreen(`Collision detected between ${body1.initialParams.name} and ${body2.initialParams.name}`, "info");
                     
                     const collisionEnergy = PhysicsCalculator.calculateCollisionEnergy(body1, body2);
-                    const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2);
+                    const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2); // Assuming this is still calculated here
+
+                    // --- NEW CINEMATIC TRIGGER LOGIC (Combined Step) ---
+                    const cinematicEnergyThreshold = PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY * 0.5;
+                    logToScreen(`[CinematicCheck] Active: ${isCinematicViewActive}, Energy: ${collisionEnergy.toFixed(0)}, Threshold: ${cinematicEnergyThreshold.toFixed(0)}`, "info");
+
+                    if (!isCinematicViewActive && collisionEnergy > cinematicEnergyThreshold) {
+                        // Set flag immediately
+                        isCinematicViewActive = true;
+                        logToScreen(`[Cinematic] Significant collision! Energy: ${collisionEnergy.toFixed(0)}. CINEMATIC SEQUENCE TRIGGERED.`, "info");
+                        // Call the NEW function defined in Part C
+                        initiateCinematicSequence(body1, body2, collisionEnergy, impactAngle);
+                    }
+                    // --- END NEW CINEMATIC TRIGGER LOGIC ---
                     
                     destructionStats.totalImpacts++;
                     destructionStats.totalEnergyReleased += collisionEnergy;
@@ -1400,12 +1523,16 @@
                     
                     const shouldFragment1 = this.shouldObjectFragment(body1, collisionEnergy);
                     const shouldFragment2 = this.shouldObjectFragment(body2, collisionEnergy);
+                    logToScreen(`[Debug] handleCollision: ${body1.initialParams.name} shouldFragment1=${shouldFragment1}`, "info");
+                    logToScreen(`[Debug] handleCollision: ${body2.initialParams.name} shouldFragment2=${shouldFragment2}`, "info");
                     
                     if (shouldFragment1) {
+                        logToScreen(`[Debug] Calling fragmentObject for ${body1.initialParams.name}`, "info");
                         this.fragmentObject(body1, collisionEnergy, body2);
                     }
                     
                     if (shouldFragment2) {
+                        logToScreen(`[Debug] Calling fragmentObject for ${body2.initialParams.name}`, "info");
                         this.fragmentObject(body2, collisionEnergy, body1);
                     }
                     
@@ -1430,6 +1557,7 @@
                 const materialResistance = material.tensileStrength * material.ductility;
                 const adjustedThreshold = destructionThreshold * (materialResistance / 100e6);
                 
+                logToScreen(`[Debug] shouldFragment? ${body.initialParams.name}: E=${energy.toFixed(2)}, UIThresh=${destructionThreshold.toFixed(2)}, MatRes=${materialResistance.toFixed(2)}, AdjThresh=${adjustedThreshold.toFixed(2)} -> ${energy > adjustedThreshold}`, "info");
                 return energy > adjustedThreshold;
             }
 
@@ -1445,11 +1573,13 @@
                         energy
                     );
                     
+                    // Temporary artificial angular velocity REMOVED for finalization.
+                    const parentAngularVelocity = body.physicsImpostor ? body.physicsImpostor.getAngularVelocity() : BABYLON.Vector3.Zero();
                     let fragmentCount = 0;
                     voronoiPoints.forEach((point, index) => {
                         if (fragmentBodies.length < PHYSICS_CONSTANTS.MAX_FRAGMENTS) {
                             const fragment = AdvancedFractureEngine.createRealisticFragment(
-                                body, point, material, index, energy
+                                body, point, material, index, energy, parentAngularVelocity
                             );
                             if (fragment) {
                                 fragmentCount++;
@@ -1545,6 +1675,93 @@
                     logToScreen(`Error removing body: ${error.message}`, "error");
                 }
             }
+        }
+
+        function initiateCinematicSequence(body1, body2, collisionEnergy, impactAngle) {
+            logToScreen(`[Cinematic] initiateCinematicSequence called. Energy: ${collisionEnergy.toFixed(0)}`, "info");
+
+            if (!camera || !scene) {
+                logToScreen("[Cinematic] Camera or Scene not available. Aborting cinematic.", "error");
+                isCinematicViewActive = false; // Reset flag
+                return;
+            }
+            const canvas = scene.getEngine().getRenderingCanvas();
+
+            // 1. Store camera's current state (more properties might be needed later)
+            const previousCameraState = {
+                position: camera.position.clone(),
+                target: camera.target.clone(),
+                fov: camera.fov,
+                // Potentially store activeSttachedControl if needed to restore specific control type
+            };
+            const previousTimeScale = timeScale; // Store current timeScale
+            logToScreen(`[Cinematic] Stored previous timeScale: ${previousTimeScale}`, "info");
+            logToScreen(`[Cinematic] Stored camera state: Pos=${previousCameraState.position.toString()}, Target=${previousCameraState.target.toString()}`, "info");
+
+            // 2. Temporarily disable user camera controls
+            if (canvas) { // Ensure canvas exists
+                camera.detachControl(canvas);
+                logToScreen("[Cinematic] User camera controls detached.", "info");
+            } else {
+                logToScreen("[Cinematic] Canvas not found, cannot detach controls.", "warn");
+            }
+
+            const collisionPoint = body1.position.add(body2.position).scale(0.5); // Approximate collision point
+            logToScreen(`[Cinematic] Approx. collision point for animation: ${collisionPoint.toString()}`, "info");
+
+            // Calculate Cinematic Camera Position
+            const baseOffsetDistance = 200 + (body1.initialParams.size + body2.initialParams.size) * 1.5;
+            let viewDirection = collisionPoint.subtract(previousCameraState.position);
+            if (viewDirection.lengthSquared() < 0.01) {
+                viewDirection = new BABYLON.Vector3(0, 0, -1);
+            }
+            viewDirection.normalize();
+            let newCameraPosition = collisionPoint.subtract(viewDirection.scale(baseOffsetDistance));
+            newCameraPosition = newCameraPosition.add(new BABYLON.Vector3(baseOffsetDistance * 0.2, baseOffsetDistance * 0.1, 0));
+            // UNIQUE LOG MARKER FOR THIS ATTEMPT:
+            logToScreen(`[CineAnim_V2] Calculated new camera position: ${newCameraPosition.toString()}`, "info");
+
+            // Create and Run Babylon.js Animations
+            const frameRate = 30;
+            const animationDurationSeconds = 0.75;
+            const totalFrames = frameRate * animationDurationSeconds;
+
+            camera.animations = []; // Clear existing animations
+
+            const animCamPosition = new BABYLON.Animation("cinematicCamPosAnim_V2", "position", frameRate, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+            const keysPos = [{ frame: 0, value: previousCameraState.position }, { frame: totalFrames, value: newCameraPosition }];
+            animCamPosition.setKeys(keysPos);
+
+            const animCamTarget = new BABYLON.Animation("cinematicCamTargetAnim_V2", "target", frameRate, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+            const keysTarget = [{ frame: 0, value: previousCameraState.target }, { frame: totalFrames, value: collisionPoint }];
+            animCamTarget.setKeys(keysTarget);
+
+            const easingFunction = new BABYLON.CircleEase();
+            easingFunction.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+            animCamPosition.setEasingFunction(easingFunction);
+            animCamTarget.setEasingFunction(easingFunction);
+
+            camera.animations.push(animCamPosition);
+            camera.animations.push(animCamTarget);
+
+            logToScreen("[CineAnim_V2] Starting camera animation to cinematic viewpoint.", "info");
+            scene.beginAnimation(camera, 0, totalFrames, false, 1.0, () => {
+                logToScreen("[CineAnim_V2] Camera animation to viewpoint complete.", "info");
+
+                // --- Activate Slow Motion ---
+                timeScale = 0.1; // Set desired slow-motion factor
+                logToScreen(`[Cinematic] Slow motion activated. New timeScale: ${timeScale}`, "info");
+                // --- End Slow Motion Activation ---
+
+                // For now, set a timeout to simulate cinematic duration and reset the flag
+                // This will be expanded in future steps to include actual camera movement back etc.
+                setTimeout(() => {
+                    logToScreen("[Cinematic] Post-animation: Sequence placeholder duration ended. Resetting flag.", "info");
+                    // TODO: Restore camera to previousCameraState (will be in a later plan step)
+                    // TODO: Re-attach controls (will be in a later plan step)
+                    isCinematicViewActive = false;
+                }, 4250); // (5000ms total - 750ms animation)
+            });
         }
 
         // Performance and Monitoring System
@@ -2340,10 +2557,14 @@
         }
 
         function startDragging(startPoint) {
+            if (!startPoint) {
+                logToScreen("Cannot start dragging: No valid start point picked.", "warn");
+                return; // Exit if startPoint is null
+            }
             isDragging = true;
             dragStartPosition = startPoint.clone();
             
-            const linePoints = [startPoint, startPoint];
+            const linePoints = [startPoint, startPoint]; // startPoint is guaranteed to be non-null here
             dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, updatable: true }, scene);
             dragLine.color = BABYLON.Color3.Yellow();
             dragLine.renderingGroupId = 1;
@@ -2358,7 +2579,13 @@
             if (!isDragging || !dragLine || !pickInfo.hit) return;
             
             const currentPoint = pickInfo.pickedPoint;
-            const linePoints = [dragStartPosition, currentPoint];
+            if (!currentPoint) {
+                // Optional: log a warning, but it might be too frequent during mouse movements.
+                // logToScreen("Cannot update dragging: No valid current point picked during move.", "warn");
+                return; // Exit if currentPoint is null
+            }
+
+            const linePoints = [dragStartPosition, currentPoint]; // currentPoint is now guaranteed non-null
             dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, instance: dragLine }, scene);
 
             const direction = currentPoint.subtract(dragStartPosition);
@@ -2446,8 +2673,9 @@
         
         function setupCollisionDetection() {
             scene.onBeforeRenderObservable.add(() => {
-                if (simulationState !== 'RUNNING') return;
-                
+                // The 'if (simulationState !== 'RUNNING') return;' line is now removed.
+                // Collision checks will run every frame regardless of simulationState.
+
                 // Clear trajectory lines
                 while(trajectoryLines.length) {
                     trajectoryLines.pop().dispose();
@@ -2512,14 +2740,35 @@
         }
         
         function toggleSimulation() {
-            simulationState = (simulationState === 'PAUSED') ? 'RUNNING' : 'PAUSED';
-            const button = document.getElementById('play-pause-button');
-            if (button) {
-                button.textContent = (simulationState === 'PAUSED') ? 'Start Simulation' : 'Pause Simulation';
-                button.classList.toggle('paused', simulationState === 'PAUSED');
+            // Check if currently effectively paused (timeScale is very small)
+            // Or rely on simulationState if it's consistently managed
+            if (simulationState === 'RUNNING') { // Intention was to run, now pause it
+                timeScaleBeforePause = timeScale; // Store the current timeScale
+                timeScale = 0.00001; // Set to very small value to pause physics animation
+                simulationState = 'PAUSED';
+                const button = document.getElementById('play-pause-button');
+                if (button) {
+                    button.textContent = 'Start Simulation'; // Or 'Play'
+                    button.classList.add('paused'); // Assuming 'paused' class makes it look like a play button
+                }
+                logToScreen("Simulation PAUSED (physics timeScale near zero)", "info");
+            } else { // Intention was to be paused, now run it
+                // Restore to timeScaleBeforePause, but ensure it's not also near zero
+                timeScale = (timeScaleBeforePause < 0.001 && timeScaleBeforePause !== 0) ? 1.0 : timeScaleBeforePause;
+                // If timeScaleBeforePause was already effectively zero (e.g. from slow-mo then pause), reset to 1.0.
+                // Or, more simply, always restore to timeScaleBeforePause if it's sensible, else 1.0.
+                if (timeScale < 0.001) { // If restored timeScale is still effectively zero (e.g. it was 0.00001)
+                     timeScale = 1.0; // Default to normal speed
+                }
+
+                simulationState = 'RUNNING';
+                const button = document.getElementById('play-pause-button');
+                if (button) {
+                    button.textContent = 'Pause Simulation'; // Or 'Pause'
+                    button.classList.remove('paused');
+                }
+                logToScreen(`Simulation RUNNING (physics timeScale: ${timeScale.toFixed(2)})`, "info");
             }
-            
-            logToScreen(`Simulation ${simulationState.toLowerCase()}`, "info");
         }
 
         function toggleSlowMotion() {
