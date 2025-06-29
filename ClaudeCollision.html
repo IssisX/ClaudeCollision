@@ -756,6 +756,7 @@
         let currentScenario = null;
         let trajectoryLines = [];
         let isCinematicViewActive = false;
+        let timeScaleBeforePause = 1.0;
 
         // Physics and Simulation Constants
         const PHYSICS_CONSTANTS = {
@@ -1202,13 +1203,17 @@
             }
 
             static createCrystallineFragment(name, size) {
+                const sides = 6 + Math.floor(Math.random() * 6); // Define sides
                 const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
                     height: size * (0.8 + Math.random() * 1.2),
                     diameterTop: size * (0.2 + Math.random() * 0.3),
                     diameterBottom: size * (0.4 + Math.random() * 0.4),
-                    tessellation: sides
+                    tessellation: sides // Use defined sides for tessellation
                 }, scene);
-                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.25);
+                // Assuming applyVertexDisplacement is correctly defined and called as per previous steps
+                if (typeof AdvancedFractureEngine.applyVertexDisplacement === 'function') {
+                    AdvancedFractureEngine.applyVertexDisplacement(fragment, size, 0.25);
+                }
                 return fragment;
             }
 
@@ -2668,7 +2673,8 @@
         
         function setupCollisionDetection() {
             scene.onBeforeRenderObservable.add(() => {
-                if (simulationState !== 'RUNNING') return; // Ensure this check is active
+                // The 'if (simulationState !== 'RUNNING') return;' line is now removed.
+                // Collision checks will run every frame regardless of simulationState.
 
                 // Clear trajectory lines
                 while(trajectoryLines.length) {
@@ -2682,10 +2688,7 @@
                         const body2 = celestialBodies[j];
                         
                         if (body1.physicsImpostor && body2.physicsImpostor) {
-                            // Add a log *before* intersectsMesh
-                            logToScreen(`[Debug] Checking collision: ${body1.name || body1.id} vs ${body2.name || body2.id}`, "info");
                             if (body1.intersectsMesh(body2, false)) {
-                                logToScreen(`[Debug] intersectsMesh TRUE for ${body1.name || body1.id} vs ${body2.name || body2.id}`, "info");
                                 CollisionSystem.handleCollision(body1, body2);
                             } else {
                                 // Draw trajectory line if bodies are approaching each other
@@ -2737,14 +2740,35 @@
         }
         
         function toggleSimulation() {
-            simulationState = (simulationState === 'PAUSED') ? 'RUNNING' : 'PAUSED';
-            const button = document.getElementById('play-pause-button');
-            if (button) {
-                button.textContent = (simulationState === 'PAUSED') ? 'Start Simulation' : 'Pause Simulation';
-                button.classList.toggle('paused', simulationState === 'PAUSED');
+            // Check if currently effectively paused (timeScale is very small)
+            // Or rely on simulationState if it's consistently managed
+            if (simulationState === 'RUNNING') { // Intention was to run, now pause it
+                timeScaleBeforePause = timeScale; // Store the current timeScale
+                timeScale = 0.00001; // Set to very small value to pause physics animation
+                simulationState = 'PAUSED';
+                const button = document.getElementById('play-pause-button');
+                if (button) {
+                    button.textContent = 'Start Simulation'; // Or 'Play'
+                    button.classList.add('paused'); // Assuming 'paused' class makes it look like a play button
+                }
+                logToScreen("Simulation PAUSED (physics timeScale near zero)", "info");
+            } else { // Intention was to be paused, now run it
+                // Restore to timeScaleBeforePause, but ensure it's not also near zero
+                timeScale = (timeScaleBeforePause < 0.001 && timeScaleBeforePause !== 0) ? 1.0 : timeScaleBeforePause;
+                // If timeScaleBeforePause was already effectively zero (e.g. from slow-mo then pause), reset to 1.0.
+                // Or, more simply, always restore to timeScaleBeforePause if it's sensible, else 1.0.
+                if (timeScale < 0.001) { // If restored timeScale is still effectively zero (e.g. it was 0.00001)
+                     timeScale = 1.0; // Default to normal speed
+                }
+
+                simulationState = 'RUNNING';
+                const button = document.getElementById('play-pause-button');
+                if (button) {
+                    button.textContent = 'Pause Simulation'; // Or 'Pause'
+                    button.classList.remove('paused');
+                }
+                logToScreen(`Simulation RUNNING (physics timeScale: ${timeScale.toFixed(2)})`, "info");
             }
-            
-            logToScreen(`Simulation ${simulationState.toLowerCase()}`, "info");
         }
 
         function toggleSlowMotion() {
