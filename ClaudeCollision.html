@@ -738,17 +738,37 @@
         let celestialBodies = [];
         let fragmentBodies = [];
         let initialCelestialStates = {};
-        let simulationState = 'PAUSED';
-        let timeScale = 1.0;
-        let gravityScale = 1.0;
-        let selectedObject = null;
-        let selectedMaterial = null;
-        let isDragging = false;
-        let dragStartPosition = null;
-        let dragLine = null;
-        let velocityArrow = null;
-        let interactionMode = 'ADD';
-        let slowMotionMode = false;
+
+        let simulationCoreState = {
+            timeScale: 1.0,
+            timeScaleBeforePause: 1.0,
+            gravityScale: 1.0,
+            slowMotionMode: false,
+            simulationState: 'PAUSED',
+            isCinematicViewActive: false,
+            restitution: 0.7,
+            friction: 0.8,
+            airResistance: 0,
+            fragmentMultiplier: 1,
+            destructionThreshold: 30000,
+        };
+
+        let objectCreationDefaults = {
+            size: 30,
+            mass: 150,
+            velocity: 50
+        };
+
+        let interactionState = {
+            selectedObject: null,
+            selectedMaterial: null,
+            isDragging: false,
+            dragStartPosition: null,
+            dragLine: null,
+            velocityArrow: null,
+            interactionMode: 'ADD'
+        };
+
         let conserveMomentum = true;
         let conserveEnergy = true;
         let realisticMaterials = true;
@@ -756,15 +776,105 @@
         let currentScenario = null;
         let trajectoryLines = [];
 
-        // Physics and Simulation Constants
         const PHYSICS_CONSTANTS = {
             G: 6.674e-11,
-            ENERGY_SCALE_FACTOR: 75000,
             MIN_DESTRUCTION_ENERGY: 30000,
-            EXTREME_DESTRUCTION_ENERGY: 150000,
             FRAGMENT_LIFETIME: 30000,
             MAX_FRAGMENTS: 500,
             COLLISION_DETECTION_RADIUS_MULTIPLIER: 1.2
+        };
+
+        const CONFIG = {
+            starfield: {
+                count: 3000,
+                minDiameter: 0.5,
+                randomDiameterAdded: 1.5,
+                minRadius: 8000,
+                randomRadiusAdded: 15000
+            },
+            cinematicCamera: {
+                baseOffsetFactor: 1,
+                additionalOffset: 200,
+                objectSizeImpactFactor: 1.5,
+                perpOffsetFactorX: 0.2,
+                perpOffsetFactorY: 0.1,
+                animationFrameRate: 30,
+                animationDurationSeconds: 0.75,
+                slowMotionTimeScale: 0.1,
+                sequenceTotalDurationMs: 5000
+            },
+            fragmentMaterials: {
+                maxEnergyForColorMapping: 20000,
+                baseEmissiveFactor: 0.5,
+                stressColorIntensity: 0.8,
+                diffuseScaleFactor: 0.7,
+                specularFixedRGB: 0.2
+            },
+            fragmentPhysics: {
+                baseRestitution: 0.3,
+                restitutionDuctilityFactor: 0.4,
+                baseFriction: 0.6,
+                frictionDuctilityFactor: 0.3,
+                explosionSpeedMultiplier: 2.5,
+                tangentialVelocityFactor: 2.5, // Factor for tangential velocity component from parent spin
+                randomAngularSpeedFactor: 10,
+                inheritedSpinMinFactor: 0.6,
+                inheritedSpinRandomFactor: 0.4
+            },
+            fragmentShapes: {
+                angular: {
+                    baseWidthFactor: 0.6, randomWidthFactor: 0.8,
+                    baseHeightFactor: 0.6, randomHeightFactor: 0.8,
+                    baseDepthFactor: 0.6, randomDepthFactor: 0.8,
+                    displacementFactor: 0.3
+                },
+                crystalline: {
+                    baseHeightFactor: 0.8, randomHeightFactor: 1.2,
+                    diameterTopBaseFactor: 0.2, diameterTopRandomFactor: 0.3,
+                    diameterBottomBaseFactor: 0.4, diameterBottomRandomFactor: 0.4,
+                    minSides: 6, randomSidesAdded: 6,
+                    displacementFactor: 0.25
+                },
+                geometric_box: {
+                    baseDimFactor: 0.4, randomDimFactor: 0.6,
+                    displacementFactor: 0.35
+                },
+                geometric_cylinder: {
+                    baseHeightFactor: 0.6, randomHeightFactor: 0.8,
+                    baseDiameterFactor: 0.5, randomDiameterFactor: 0.3,
+                    minTessellation: 8, randomTessellationAdded: 8,
+                    displacementFactor: 0.35
+                },
+                geometric_sphere: {
+                    baseDiameterFactor: 0.6, randomDiameterFactor: 0.8,
+                    minSegments: 8, randomSegmentsAdded: 8,
+                    displacementFactor: 0.35
+                },
+                sheared: {
+                    baseWidthFactor: 0.2, randomWidthFactor: 0.6,
+                    baseHeightFactor: 0.6, randomHeightFactor: 0.8,
+                    baseDepthFactor: 0.3, randomDepthFactor: 0.5,
+                    rotationFactor: 0.8,
+                    displacementFactor: 0.2
+                },
+                fibrous: {
+                    baseHeightFactor: 1.5, randomHeightFactor: 2.0,
+                    baseDiameterFactor: 0.1, randomDiameterFactor: 0.2,
+                    tessellation: 6,
+                    displacementFactor: 0.15
+                },
+                generic: {
+                    baseDiameterFactor: 0.5, randomDiameterFactor: 0.5,
+                    segments: 8,
+                    displacementFactor: 0.4
+                },
+                fallback: { displacementFactor: 0.3 }
+            },
+            collisionEffects: {
+                flashLightMaxIntensity: 10,
+                flashLightEnergyDivisor: 10000,
+                flashLightDurationMs: 500
+            }
         };
 
         // Enhanced Analytics System
@@ -844,6 +954,102 @@
                 logContent.scrollTop = logContent.scrollHeight;
             }
         }
+
+        function updateTimeScaleUI(newTimeScale) {
+            const timeScaleRange = document.getElementById('time-scale');
+            const timeScaleNumber = document.getElementById('time-scale-value');
+            if (timeScaleRange) timeScaleRange.value = newTimeScale;
+            if (timeScaleNumber) timeScaleNumber.value = newTimeScale;
+
+            const slowMotionBtn = document.getElementById('slow-motion-btn');
+            if (slowMotionBtn) {
+                if (simulationCoreState.slowMotionMode && Math.abs(newTimeScale - CONFIG.cinematicCamera.slowMotionTimeScale) < 0.001) {
+                     slowMotionBtn.style.background = 'linear-gradient(135deg, #ffd43b, #fab005)';
+                     slowMotionBtn.textContent = 'Normal Speed';
+                } else {
+                     slowMotionBtn.style.background = '';
+                     slowMotionBtn.textContent = 'Slow Motion';
+                }
+            }
+        }
+
+        function updateGravityScaleUI(newValue) {
+            const range = document.getElementById('gravity-scale');
+            const number = document.getElementById('gravity-scale-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateObjectSizeUI(newValue) {
+            const range = document.getElementById('object-size');
+            const number = document.getElementById('object-size-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateObjectMassUI(newValue) {
+            const range = document.getElementById('object-mass');
+            const number = document.getElementById('object-mass-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateObjectVelocityUI(newValue) {
+            const range = document.getElementById('object-velocity');
+            const number = document.getElementById('object-velocity-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateRestitutionUI(newValue) {
+            const range = document.getElementById('restitution');
+            const number = document.getElementById('restitution-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateFrictionUI(newValue) {
+            const range = document.getElementById('friction');
+            const number = document.getElementById('friction-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateAirResistanceUI(newValue) {
+            const range = document.getElementById('air-resistance');
+            const number = document.getElementById('air-resistance-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateFragmentMultiplierUI(newValue) {
+            const range = document.getElementById('fragment-multiplier');
+            const number = document.getElementById('fragment-multiplier-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function updateDestructionThresholdUI(newValue) {
+            const range = document.getElementById('destruction-threshold');
+            const number = document.getElementById('destruction-threshold-value');
+            if (range) range.value = newValue;
+            if (number) number.value = newValue;
+        }
+
+        function initializeUIFromState() {
+            updateTimeScaleUI(simulationCoreState.timeScale);
+            updateGravityScaleUI(simulationCoreState.gravityScale);
+            updateObjectSizeUI(objectCreationDefaults.size);
+            updateObjectMassUI(objectCreationDefaults.mass);
+            updateObjectVelocityUI(objectCreationDefaults.velocity);
+            updateRestitutionUI(simulationCoreState.restitution);
+            updateFrictionUI(simulationCoreState.friction);
+            updateAirResistanceUI(simulationCoreState.airResistance);
+            updateFragmentMultiplierUI(simulationCoreState.fragmentMultiplier);
+            updateDestructionThresholdUI(simulationCoreState.destructionThreshold);
+            logToScreen("[UI_INIT] All UI controls initialized from state.", "info");
+        }
+
 
         // Enhanced Material System with Scientific Properties
         const MaterialTypes = {
@@ -945,8 +1151,7 @@
             }
         };
 
-        // Set default material
-        selectedMaterial = MaterialTypes.ROCK;
+        interactionState.selectedMaterial = MaterialTypes.ROCK;
 
         // Advanced Physics Calculation System
         class PhysicsCalculator {
@@ -1023,11 +1228,25 @@
                     Math.random() * (material.fragments.max - material.fragments.min);
                 
                 const energyMultiplier = Math.max(1, Math.log10(energy / PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY + 1));
-                const fragmentMultiplier = parseFloat(document.getElementById('fragment-multiplier')?.value || 1);
+                const fragmentMultiplier = simulationCoreState.fragmentMultiplier;
+
+                let calculatedNumPoints = Math.round(basePoints * energyMultiplier * fragmentMultiplier);
+
+                if (calculatedNumPoints <= 0) {
+                    logToScreen(`[Debug] generateVoronoiPattern: calculatedNumPoints is ${calculatedNumPoints} for ${material.name}. Returning empty points array.`, "info");
+                    return [];
+                }
+
                 const numPoints = Math.min(
                     PHYSICS_CONSTANTS.MAX_FRAGMENTS / 2,
-                    Math.round(basePoints * energyMultiplier * fragmentMultiplier)
+                    calculatedNumPoints
                 );
+
+                if (numPoints <= 0) {
+                     logToScreen(`[Debug] generateVoronoiPattern: numPoints is ${numPoints} (after min with MAX_FRAGMENTS) for ${material.name}. Returning empty points array.`, "info");
+                    return [];
+                }
+                logToScreen(`[Debug] generateVoronoiPattern: numPoints = ${numPoints} for ${material.name}`, "info");
                 
                 const points = [];
                 for (let i = 0; i < numPoints; i++) {
@@ -1079,7 +1298,22 @@
                 }
             }
 
-            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy) {
+            static applyVertexDisplacement(mesh, size, displacementScaleFactor) {
+                if (!mesh) return;
+                const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                if (!positions) return;
+
+                const displacementAmount = size * displacementScaleFactor;
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] += (Math.random() - 0.5) * displacementAmount;
+                    positions[i + 1] += (Math.random() - 0.5) * displacementAmount;
+                    positions[i + 2] += (Math.random() - 0.5) * displacementAmount;
+                }
+                mesh.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+            }
+
+            static createRealisticFragment(originalMesh, voronoiPoint, material, fragmentIndex, totalEnergy, parentAngularVelocity) {
                 if (!scene) {
                     logToScreen("Error: Scene not available in createRealisticFragment", "error");
                     return null;
@@ -1099,10 +1333,11 @@
                     
                     if (fragmentMesh) {
                         fragmentMesh.position = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z);
-                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, energyRatio);
+                        fragmentMesh.material = this.createEnhancedFragmentMaterial(material, fragmentIndex, voronoiPoint.energy);
                         
                         const fragmentMass = originalMesh.initialParams.mass * energyRatio * 0.1;
-                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy);
+                        const fragmentRelativePosition = new BABYLON.Vector3(voronoiPoint.x, voronoiPoint.y, voronoiPoint.z).subtract(originalMesh.position);
+                        this.setupFragmentPhysics(fragmentMesh, fragmentMass, material, voronoiPoint.energy, parentAngularVelocity, fragmentRelativePosition);
                         
                         fragmentMesh.initialParams = {
                             name: 'fragment',
@@ -1155,91 +1390,118 @@
             }
 
             static createAngularFragment(name, size) {
-                const irregularity = 0.3 + Math.random() * 0.4;
-                return BABYLON.MeshBuilder.CreateBox(name, {
-                    width: size * (0.6 + Math.random() * 0.8),
-                    height: size * (0.6 + Math.random() * 0.8),
-                    depth: size * (0.6 + Math.random() * 0.8)
+                const conf = CONFIG.fragmentShapes.angular;
+                const fragment = BABYLON.MeshBuilder.CreateBox(name, {
+                    width: size * (conf.baseWidthFactor + Math.random() * conf.randomWidthFactor),
+                    height: size * (conf.baseHeightFactor + Math.random() * conf.randomHeightFactor),
+                    depth: size * (conf.baseDepthFactor + Math.random() * conf.randomDepthFactor)
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
+                return fragment;
             }
 
             static createCrystallineFragment(name, size) {
-                const sides = 6 + Math.floor(Math.random() * 6);
-                return BABYLON.MeshBuilder.CreateCylinder(name, {
-                    height: size * (0.8 + Math.random() * 1.2),
-                    diameterTop: size * (0.2 + Math.random() * 0.3),
-                    diameterBottom: size * (0.4 + Math.random() * 0.4),
+                const conf = CONFIG.fragmentShapes.crystalline;
+                const sides = conf.minSides + Math.floor(Math.random() * conf.randomSidesAdded);
+                const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
+                    height: size * (conf.baseHeightFactor + Math.random() * conf.randomHeightFactor),
+                    diameterTop: size * (conf.diameterTopBaseFactor + Math.random() * conf.diameterTopRandomFactor),
+                    diameterBottom: size * (conf.diameterBottomBaseFactor + Math.random() * conf.diameterBottomRandomFactor),
                     tessellation: sides
                 }, scene);
+                if (typeof AdvancedFractureEngine.applyVertexDisplacement === 'function') {
+                    AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
+                }
+                return fragment;
             }
 
             static createGeometricFragment(name, size) {
                 const shapes = ['Box', 'Sphere', 'Cylinder'];
                 const shapeType = shapes[Math.floor(Math.random() * shapes.length)];
-                
+                let fragment;
+                let conf;
                 switch (shapeType) {
                     case 'Box':
-                        return BABYLON.MeshBuilder.CreateBox(name, {
-                            width: size * (0.4 + Math.random() * 0.6),
-                            height: size * (0.4 + Math.random() * 0.6),
-                            depth: size * (0.4 + Math.random() * 0.6)
+                        conf = CONFIG.fragmentShapes.geometric_box;
+                        fragment = BABYLON.MeshBuilder.CreateBox(name, {
+                            width: size * (conf.baseDimFactor + Math.random() * conf.randomDimFactor),
+                            height: size * (conf.baseDimFactor + Math.random() * conf.randomDimFactor),
+                            depth: size * (conf.baseDimFactor + Math.random() * conf.randomDimFactor)
                         }, scene);
+                        AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
+                        break;
                     case 'Cylinder':
-                        return BABYLON.MeshBuilder.CreateCylinder(name, {
-                            height: size * (0.6 + Math.random() * 0.8),
-                            diameter: size * (0.5 + Math.random() * 0.3),
-                            tessellation: 8 + Math.floor(Math.random() * 8)
+                        conf = CONFIG.fragmentShapes.geometric_cylinder;
+                        fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
+                            height: size * (conf.baseHeightFactor + Math.random() * conf.randomHeightFactor),
+                            diameter: size * (conf.baseDiameterFactor + Math.random() * conf.randomDiameterFactor),
+                            tessellation: conf.minTessellation + Math.floor(Math.random() * conf.randomTessellationAdded)
                         }, scene);
-                    default:
-                        return BABYLON.MeshBuilder.CreateSphere(name, {
-                            diameter: size * (0.6 + Math.random() * 0.8),
-                            segments: 8 + Math.floor(Math.random() * 8)
+                        AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
+                        break;
+                    default: // Sphere
+                        conf = CONFIG.fragmentShapes.geometric_sphere;
+                        fragment = BABYLON.MeshBuilder.CreateSphere(name, {
+                            diameter: size * (conf.baseDiameterFactor + Math.random() * conf.randomDiameterFactor),
+                            segments: conf.minSegments + Math.floor(Math.random() * conf.randomSegmentsAdded)
                         }, scene);
+                        AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
+                        break;
                 }
+                return fragment;
             }
 
             static createShearedFragment(name, size) {
+                const conf = CONFIG.fragmentShapes.sheared;
                 const fragment = BABYLON.MeshBuilder.CreateBox(name, {
-                    width: size * (0.2 + Math.random() * 0.6),
-                    height: size * (0.6 + Math.random() * 0.8),
-                    depth: size * (0.3 + Math.random() * 0.5)
+                    width: size * (conf.baseWidthFactor + Math.random() * conf.randomWidthFactor),
+                    height: size * (conf.baseHeightFactor + Math.random() * conf.randomHeightFactor),
+                    depth: size * (conf.baseDepthFactor + Math.random() * conf.randomDepthFactor)
                 }, scene);
                 
-                fragment.rotation.x = (Math.random() - 0.5) * 0.8;
-                fragment.rotation.z = (Math.random() - 0.5) * 0.8;
+                fragment.rotation.x = (Math.random() - 0.5) * conf.rotationFactor;
+                fragment.rotation.z = (Math.random() - 0.5) * conf.rotationFactor;
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
                 return fragment;
             }
 
             static createFibrousFragment(name, size) {
-                return BABYLON.MeshBuilder.CreateCylinder(name, {
-                    height: size * (1.5 + Math.random() * 2),
-                    diameter: size * (0.1 + Math.random() * 0.2),
-                    tessellation: 6
+                const conf = CONFIG.fragmentShapes.fibrous;
+                const fragment = BABYLON.MeshBuilder.CreateCylinder(name, {
+                    height: size * (conf.baseHeightFactor + Math.random() * conf.randomHeightFactor),
+                    diameter: size * (conf.baseDiameterFactor + Math.random() * conf.randomDiameterFactor),
+                    tessellation: conf.tessellation
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size * 0.5, conf.displacementFactor);
+                return fragment;
             }
 
-            static createFluidFragment(name, size) {
+            static createFluidFragment(name, size) { // Fluid fragments are small spheres, less reliant on complex CONFIG for now
                 const fragment = BABYLON.MeshBuilder.CreateSphere(name, {
-                    diameter: size * (0.3 + Math.random() * 0.4),
+                    diameter: size * (0.3 + Math.random() * 0.4), // Retaining some inline randomness for simplicity
                     segments: 6
                 }, scene);
                 
                 const positions = fragment.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-                for (let i = 0; i < positions.length; i += 3) {
-                    positions[i] += (Math.random() - 0.5) * size * 0.1;
-                    positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
-                    positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                if (positions) {
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i] += (Math.random() - 0.5) * size * 0.1;
+                        positions[i + 1] += (Math.random() - 0.5) * size * 0.1;
+                        positions[i + 2] += (Math.random() - 0.5) * size * 0.1;
+                    }
+                    fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
                 }
-                fragment.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
-                
                 return fragment;
             }
 
             static createGenericFragment(name, size) {
-                return BABYLON.MeshBuilder.CreateSphere(name, {
-                    diameter: size * (0.5 + Math.random() * 0.5),
-                    segments: 8
+                const conf = CONFIG.fragmentShapes.generic;
+                const fragment = BABYLON.MeshBuilder.CreateSphere(name, {
+                    diameter: size * (conf.baseDiameterFactor + Math.random() * conf.randomDiameterFactor),
+                    segments: conf.segments
                 }, scene);
+                AdvancedFractureEngine.applyVertexDisplacement(fragment, size, conf.displacementFactor);
+                return fragment;
             }
 
             static createFallbackFragment(size, index) {
@@ -1248,6 +1510,9 @@
                         diameter: size,
                         segments: 6
                     }, scene);
+                    if (fragment) {
+                        AdvancedFractureEngine.applyVertexDisplacement(fragment, size, CONFIG.fragmentShapes.fallback.displacementFactor);
+                    }
                     return fragment;
                 } catch (error) {
                     logToScreen(`Error creating fallback fragment: ${error.message}`, "error");
@@ -1255,24 +1520,37 @@
                 }
             }
 
-            static createEnhancedFragmentMaterial(material, index, energyRatio) {
+            static createEnhancedFragmentMaterial(material, index, fragmentEnergy) {
                 if (!scene) return null;
                 
                 try {
                     const fragmentMat = new BABYLON.StandardMaterial(`fragment_mat_${index}`, scene);
+                    const confMat = CONFIG.fragmentMaterials;
                     
-                    const baseColor = BABYLON.Color3.FromHexString(material.color);
-                    const heatVariation = energyRatio * 0.5;
-                    const randomVariation = 0.2;
+                    const normalizedEnergy = Math.min(Math.max(0, fragmentEnergy), confMat.maxEnergyForColorMapping) / confMat.maxEnergyForColorMapping;
+
+                    let r = 0, g = 0, b = 0;
+                    if (normalizedEnergy < 0.5) {
+                        b = 1.0 - (normalizedEnergy * 2);
+                        g = normalizedEnergy * 2;
+                    } else {
+                        g = 1.0 - ((normalizedEnergy - 0.5) * 2);
+                        r = (normalizedEnergy - 0.5) * 2;
+                    }
+                    r = Math.max(0, Math.min(1, r));
+                    g = Math.max(0, Math.min(1, g));
+                    b = Math.max(0, Math.min(1, b));
+
+                    const baseEmissiveIntensity = material.emissive * confMat.baseEmissiveFactor;
                     
-                    fragmentMat.diffuseColor = new BABYLON.Color3(
-                        Math.max(0, Math.min(1, baseColor.r + heatVariation + (Math.random() - 0.5) * randomVariation)),
-                        Math.max(0, Math.min(1, baseColor.g + (Math.random() - 0.5) * randomVariation)),
-                        Math.max(0, Math.min(1, baseColor.b + (Math.random() - 0.5) * randomVariation))
+                    fragmentMat.emissiveColor = new BABYLON.Color3(
+                        baseEmissiveIntensity + r * confMat.stressColorIntensity,
+                        baseEmissiveIntensity + g * confMat.stressColorIntensity,
+                        baseEmissiveIntensity + b * confMat.stressColorIntensity
                     );
                     
-                    fragmentMat.emissiveColor = fragmentMat.diffuseColor.scale(material.emissive + heatVariation * 0.3);
-                    fragmentMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                    fragmentMat.diffuseColor = BABYLON.Color3.FromHexString(material.color).scale(confMat.diffuseScaleFactor);
+                    fragmentMat.specularColor = new BABYLON.Color3(confMat.specularFixedRGB, confMat.specularFixedRGB, confMat.specularFixedRGB);
                     
                     return fragmentMat;
                 } catch (error) {
@@ -1281,37 +1559,56 @@
                 }
             }
 
-            static setupFragmentPhysics(fragment, mass, material, energy) {
+            static setupFragmentPhysics(fragment, mass, material, energy, parentAngularVelocity, fragmentRelativePosition) {
+                parentAngularVelocity = parentAngularVelocity || BABYLON.Vector3.Zero();
+                fragmentRelativePosition = fragmentRelativePosition || BABYLON.Vector3.Zero();
+                const confPhys = CONFIG.fragmentPhysics;
+
                 try {
                     fragment.physicsImpostor = new BABYLON.PhysicsImpostor(
                         fragment,
                         BABYLON.PhysicsImpostor.SphereImpostor,
                         {
                             mass: mass,
-                            restitution: 0.3 + material.ductility * 0.4,
-                            friction: 0.6 + material.ductility * 0.3
+                            restitution: confPhys.baseRestitution + material.ductility * confPhys.restitutionDuctilityFactor,
+                            friction: confPhys.baseFriction + material.ductility * confPhys.frictionDuctilityFactor
                         },
                         scene
                     );
-                    
+
                     const explosionDirection = new BABYLON.Vector3(
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2
                     ).normalize();
-                    
-                    const explosionSpeed = Math.sqrt(energy / mass) * 0.1;
-                    fragment.physicsImpostor.setLinearVelocity(explosionDirection.scale(explosionSpeed));
-                    
-                    const angularVelocity = new BABYLON.Vector3(
-                        (Math.random() - 0.5) * 10,
-                        (Math.random() - 0.5) * 10,
-                        (Math.random() - 0.5) * 10
+
+                    let explosionSpeed = 0;
+                    if (mass > 0 && energy > 0) {
+                        explosionSpeed = Math.sqrt(energy / mass) * confPhys.explosionSpeedMultiplier;
+                    } else {
+                        logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: Invalid mass (${mass.toFixed(4)}) or energy (${energy.toFixed(4)}) for explosion. Setting zero explosion speed.`, "warn");
+                    }
+                    const explosionVelocity = explosionDirection.scale(explosionSpeed);
+                    const tangentialVelocity = BABYLON.Vector3.Cross(parentAngularVelocity, fragmentRelativePosition).scale(confPhys.tangentialVelocityFactor);
+                    const finalLinearVelocity = explosionVelocity.add(tangentialVelocity);
+
+                    const inheritedSpin = parentAngularVelocity.scale(confPhys.inheritedSpinMinFactor + Math.random() * confPhys.inheritedSpinRandomFactor);
+                    const randomAngularVelocity = new BABYLON.Vector3(
+                        (Math.random() - 0.5) * confPhys.randomAngularSpeedFactor,
+                        (Math.random() - 0.5) * confPhys.randomAngularSpeedFactor,
+                        (Math.random() - 0.5) * confPhys.randomAngularSpeedFactor
                     );
-                    fragment.physicsImpostor.setAngularVelocity(angularVelocity);
+                    const finalAngularVelocity = inheritedSpin.add(randomAngularVelocity);
+
+                    if (fragment.physicsImpostor) {
+                        fragment.physicsImpostor.setLinearVelocity(finalLinearVelocity);
+                        fragment.physicsImpostor.setAngularVelocity(finalAngularVelocity);
+                    } else {
+                        logToScreen(`[Debug] Fragment ${fragment.name || fragment.id}: ERROR - No physics impostor found to set velocities!`, "error");
+                    }
                     
                 } catch (error) {
-                    logToScreen(`Error setting up fragment physics: ${error.message}`, "error");
+                    logToScreen(`Error setting up fragment physics for ${fragment.name || fragment.id}: ${error.message}`, "error");
                 }
             }
 
@@ -1335,7 +1632,6 @@
             }
         }
 
-        // Enhanced Collision Detection and Response System
         class CollisionSystem {
             static detectCollisions() {
                 const currentTime = Date.now();
@@ -1379,6 +1675,15 @@
                     
                     const collisionEnergy = PhysicsCalculator.calculateCollisionEnergy(body1, body2);
                     const impactAngle = PhysicsCalculator.calculateImpactAngle(body1, body2);
+
+                    const cinematicEnergyThreshold = PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY * 0.5;
+                    logToScreen(`[CinematicCheck] Active: ${simulationCoreState.isCinematicViewActive}, Energy: ${collisionEnergy.toFixed(0)}, Threshold: ${cinematicEnergyThreshold.toFixed(0)}`, "info");
+
+                    if (!simulationCoreState.isCinematicViewActive && collisionEnergy > cinematicEnergyThreshold) {
+                        simulationCoreState.isCinematicViewActive = true;
+                        logToScreen(`[Cinematic] Significant collision! Energy: ${collisionEnergy.toFixed(0)}. CINEMATIC SEQUENCE TRIGGERED.`, "info");
+                        initiateCinematicSequence(body1, body2, collisionEnergy, impactAngle);
+                    }
                     
                     destructionStats.totalImpacts++;
                     destructionStats.totalEnergyReleased += collisionEnergy;
@@ -1400,12 +1705,16 @@
                     
                     const shouldFragment1 = this.shouldObjectFragment(body1, collisionEnergy);
                     const shouldFragment2 = this.shouldObjectFragment(body2, collisionEnergy);
+                    logToScreen(`[Debug] handleCollision: ${body1.initialParams.name} shouldFragment1=${shouldFragment1}`, "info");
+                    logToScreen(`[Debug] handleCollision: ${body2.initialParams.name} shouldFragment2=${shouldFragment2}`, "info");
                     
                     if (shouldFragment1) {
+                        logToScreen(`[Debug] Calling fragmentObject for ${body1.initialParams.name}`, "info");
                         this.fragmentObject(body1, collisionEnergy, body2);
                     }
                     
                     if (shouldFragment2) {
+                        logToScreen(`[Debug] Calling fragmentObject for ${body2.initialParams.name}`, "info");
                         this.fragmentObject(body2, collisionEnergy, body1);
                     }
                     
@@ -1425,11 +1734,12 @@
 
             static shouldObjectFragment(body, energy) {
                 const material = body.initialParams.material;
-                const destructionThreshold = parseFloat(document.getElementById('destruction-threshold')?.value || PHYSICS_CONSTANTS.MIN_DESTRUCTION_ENERGY);
+                const destructionThreshold = simulationCoreState.destructionThreshold;
                 
                 const materialResistance = material.tensileStrength * material.ductility;
                 const adjustedThreshold = destructionThreshold * (materialResistance / 100e6);
                 
+                logToScreen(`[Debug] shouldFragment? ${body.initialParams.name}: E=${energy.toFixed(2)}, UIThresh=${destructionThreshold.toFixed(2)}, MatRes=${materialResistance.toFixed(2)}, AdjThresh=${adjustedThreshold.toFixed(2)} -> ${energy > adjustedThreshold}`, "info");
                 return energy > adjustedThreshold;
             }
 
@@ -1445,11 +1755,12 @@
                         energy
                     );
                     
+                    const parentAngularVelocity = body.physicsImpostor ? body.physicsImpostor.getAngularVelocity() : BABYLON.Vector3.Zero();
                     let fragmentCount = 0;
                     voronoiPoints.forEach((point, index) => {
                         if (fragmentBodies.length < PHYSICS_CONSTANTS.MAX_FRAGMENTS) {
                             const fragment = AdvancedFractureEngine.createRealisticFragment(
-                                body, point, material, index, energy
+                                body, point, material, index, energy, parentAngularVelocity
                             );
                             if (fragment) {
                                 fragmentCount++;
@@ -1486,7 +1797,7 @@
                     
                     if (velocityAlongNormal > 0) return;
                     
-                    const restitution = parseFloat(document.getElementById('restitution')?.value || 0.7);
+                    const restitution = simulationCoreState.restitution;
                     const impulseScalar = -(1 + restitution) * velocityAlongNormal / (1/m1 + 1/m2);
                     
                     const impulse = normal.scale(impulseScalar);
@@ -1512,7 +1823,7 @@
                     const collisionPoint = body1.position.add(body2.position).scale(0.5);
                     
                     const flashLight = new BABYLON.PointLight("collisionFlash", collisionPoint, scene);
-                    flashLight.intensity = Math.min(10, energy / 10000);
+                    flashLight.intensity = Math.min(CONFIG.collisionEffects.flashLightMaxIntensity, energy / CONFIG.collisionEffects.flashLightEnergyDivisor);
                     flashLight.diffuse = new BABYLON.Color3(1, 0.8, 0.4);
                     
                     BABYLON.Animation.CreateAndStartAnimation(
@@ -1522,7 +1833,7 @@
                     
                     setTimeout(() => {
                         flashLight.dispose();
-                    }, 500);
+                    }, CONFIG.collisionEffects.flashLightDurationMs);
                     
                 } catch (error) {
                     logToScreen(`Error creating collision effects: ${error.message}`, "error");
@@ -1545,6 +1856,96 @@
                     logToScreen(`Error removing body: ${error.message}`, "error");
                 }
             }
+        }
+
+        function initiateCinematicSequence(body1, body2, collisionEnergy, impactAngle) {
+            logToScreen(`[Cinematic] initiateCinematicSequence called. Energy: ${collisionEnergy.toFixed(0)}`, "info");
+            const camConfig = CONFIG.cinematicCamera;
+
+            if (!camera || !scene) {
+                logToScreen("[Cinematic] Camera or Scene not available. Aborting cinematic.", "error");
+                simulationCoreState.isCinematicViewActive = false;
+                return;
+            }
+            const canvas = scene.getEngine().getRenderingCanvas();
+
+            const previousCameraState = {
+                position: camera.position.clone(),
+                target: camera.target.clone(),
+                fov: camera.fov,
+            };
+            // simulationCoreState.timeScaleBeforePause is set by toggleSimulation if it's the source of pause
+            // If cinematic sequence is triggered when not paused, this ensures we can return to normal speed.
+            if (simulationCoreState.timeScale > camConfig.slowMotionTimeScale) { // Check if not already in slow-mo or paused
+                 simulationCoreState.timeScaleBeforePause = simulationCoreState.timeScale;
+            }
+            logToScreen(`[Cinematic] Stored camera state: Pos=${previousCameraState.position.toString()}, Target=${previousCameraState.target.toString()}`, "info");
+            logToScreen(`[Cinematic] timeScaleBeforePause set to: ${simulationCoreState.timeScaleBeforePause}`, "info");
+
+
+            if (canvas) {
+                camera.detachControl(canvas);
+                logToScreen("[Cinematic] User camera controls detached.", "info");
+            } else {
+                logToScreen("[Cinematic] Canvas not found, cannot detach controls.", "warn");
+            }
+
+            const collisionPoint = body1.position.add(body2.position).scale(0.5);
+            logToScreen(`[Cinematic] Approx. collision point for animation: ${collisionPoint.toString()}`, "info");
+
+            const baseOffsetDistance = camConfig.additionalOffset + (body1.initialParams.size + body2.initialParams.size) * camConfig.objectSizeImpactFactor;
+            let viewDirection = collisionPoint.subtract(previousCameraState.position);
+            if (viewDirection.lengthSquared() < 0.01) {
+                viewDirection = new BABYLON.Vector3(0, 0, -1);
+            }
+            viewDirection.normalize();
+            let newCameraPosition = collisionPoint.subtract(viewDirection.scale(baseOffsetDistance));
+            newCameraPosition = newCameraPosition.add(new BABYLON.Vector3(baseOffsetDistance * camConfig.perpOffsetFactorX, baseOffsetDistance * camConfig.perpOffsetFactorY, 0));
+            logToScreen(`[CineAnim_V2] Calculated new camera position: ${newCameraPosition.toString()}`, "info");
+
+            const totalFrames = camConfig.animationFrameRate * camConfig.animationDurationSeconds;
+
+            camera.animations = [];
+
+            const animCamPosition = new BABYLON.Animation("cinematicCamPosAnim_V2", "position", camConfig.animationFrameRate, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+            const keysPos = [{ frame: 0, value: previousCameraState.position }, { frame: totalFrames, value: newCameraPosition }];
+            animCamPosition.setKeys(keysPos);
+
+            const animCamTarget = new BABYLON.Animation("cinematicCamTargetAnim_V2", "target", camConfig.animationFrameRate, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+            const keysTarget = [{ frame: 0, value: previousCameraState.target }, { frame: totalFrames, value: collisionPoint }];
+            animCamTarget.setKeys(keysTarget);
+
+            const easingFunction = new BABYLON.CircleEase();
+            easingFunction.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+            animCamPosition.setEasingFunction(easingFunction);
+            animCamTarget.setEasingFunction(easingFunction);
+
+            camera.animations.push(animCamPosition);
+            camera.animations.push(animCamTarget);
+
+            logToScreen("[CineAnim_V2] Starting camera animation to cinematic viewpoint.", "info");
+            scene.beginAnimation(camera, 0, totalFrames, false, 1.0, () => {
+                logToScreen("[CineAnim_V2] Camera animation to viewpoint complete.", "info");
+
+                simulationCoreState.timeScale = camConfig.slowMotionTimeScale;
+                updateTimeScaleUI(simulationCoreState.timeScale);
+                logToScreen(`[Cinematic] Slow motion activated. New timeScale: ${simulationCoreState.timeScale}`, "info");
+
+                const remainingDuration = camConfig.sequenceTotalDurationMs - (camConfig.animationDurationSeconds * 1000);
+                setTimeout(() => {
+                    logToScreen("[Cinematic] Sequence complete. Restoring state.", "info");
+                    camera.position = previousCameraState.position;
+                    camera.target = previousCameraState.target;
+                    camera.fov = previousCameraState.fov;
+                    if(canvas) camera.attachControl(canvas, true);
+
+                    simulationCoreState.timeScale = simulationCoreState.timeScaleBeforePause; // Restore original
+                    updateTimeScaleUI(simulationCoreState.timeScale);
+                    logToScreen(`[Cinematic] Time scale restored to: ${simulationCoreState.timeScale}`, "info");
+
+                    simulationCoreState.isCinematicViewActive = false;
+                }, Math.max(0, remainingDuration));
+            });
         }
 
         // Performance and Monitoring System
@@ -1749,16 +2150,14 @@
 
         function createEnhancedStarfield() {
             try {
-                const starCount = 3000;
                 const stars = [];
-                
-                for (let i = 0; i < starCount; i++) {
+                for (let i = 0; i < CONFIG.starfield.count; i++) {
                     const star = BABYLON.MeshBuilder.CreateSphere(`star_${i}`, {
-                        diameter: 0.5 + Math.random() * 1.5,
+                        diameter: CONFIG.starfield.minDiameter + Math.random() * CONFIG.starfield.randomDiameterAdded,
                         segments: 4
                     }, scene);
                     
-                    const radius = 8000 + Math.random() * 15000;
+                    const radius = CONFIG.starfield.minRadius + Math.random() * CONFIG.starfield.randomRadiusAdded;
                     const theta = Math.random() * Math.PI * 2;
                     const phi = Math.random() * Math.PI;
                     
@@ -1806,7 +2205,7 @@
                     }
                 }
                 
-                logToScreen("Enhanced starfield created with 3000 stars", "info");
+                logToScreen(`Enhanced starfield created with ${CONFIG.starfield.count} stars`, "info");
             } catch (error) {
                 logToScreen(`Error creating starfield: ${error.message}`, "error");
             }
@@ -2077,16 +2476,13 @@
                 }
                 
                 if (!isStatic) {
-                    const restitution = parseFloat(document.getElementById('restitution')?.value || 0.7);
-                    const friction = parseFloat(document.getElementById('friction')?.value || 0.8);
-                    
                     bodyMesh.physicsImpostor = new BABYLON.PhysicsImpostor(
                         bodyMesh,
                         BABYLON.PhysicsImpostor.SphereImpostor,
                         {
                             mass: mass,
-                            restitution: restitution * material.ductility,
-                            friction: friction
+                            restitution: simulationCoreState.restitution * material.ductility,
+                            friction: simulationCoreState.friction
                         },
                         scene
                     );
@@ -2172,6 +2568,7 @@
                 syncRangeInputs();
                 initializeMaterialSelector();
                 updateModeDisplay();
+                initializeUIFromState();
                 
                 logToScreen("Mobile UI initialized successfully", "info");
             } catch (error) {
@@ -2249,35 +2646,91 @@
             ];
             
             inputPairs.forEach(([rangeId, valueId]) => {
-                const range = document.getElementById(rangeId);
-                const value = document.getElementById(valueId);
+                const rangeElement = document.getElementById(rangeId);
+                const valueElement = document.getElementById(valueId);
                 
-                if (range && value) {
-                    range.addEventListener('input', () => {
-                        value.value = range.value;
-                        handleParameterChange(rangeId, parseFloat(range.value));
-                    });
-                    value.addEventListener('input', () => {
-                        range.value = value.value;
-                        handleParameterChange(rangeId, parseFloat(value.value));
-                    });
+                if (rangeElement && valueElement) {
+                    rangeElement.addEventListener('input', () => handleParameterChange(rangeId, rangeElement.value));
+                    valueElement.addEventListener('input', () => handleParameterChange(valueId, valueElement.value));
                 }
             });
         }
 
-        function handleParameterChange(id, value) {
-            switch(id) {
+        function handleParameterChange(inputId, value) {
+            const newValue = parseFloat(value);
+            switch(inputId) {
                 case 'time-scale':
-                    timeScale = value;
-                    slowMotionMode = false;
-                    const slowMotionBtn = document.getElementById('slow-motion-btn');
-                    if (slowMotionBtn) slowMotionBtn.style.background = '';
+                case 'time-scale-value':
+                    if (simulationCoreState.timeScale !== newValue) {
+                        simulationCoreState.timeScale = newValue;
+                        if (Math.abs(newValue - CONFIG.cinematicCamera.slowMotionTimeScale) > 0.001) {
+                            simulationCoreState.slowMotionMode = false;
+                        }
+                    }
+                    updateTimeScaleUI(simulationCoreState.timeScale);
                     break;
                 case 'gravity-scale':
-                    gravityScale = value;
+                case 'gravity-scale-value':
+                    if (simulationCoreState.gravityScale !== newValue) {
+                        simulationCoreState.gravityScale = newValue;
+                    }
+                    updateGravityScaleUI(simulationCoreState.gravityScale);
+                    break;
+                case 'object-size':
+                case 'object-size-value':
+                    if (objectCreationDefaults.size !== newValue) {
+                        objectCreationDefaults.size = newValue;
+                    }
+                    updateObjectSizeUI(objectCreationDefaults.size);
+                    break;
+                case 'object-mass':
+                case 'object-mass-value':
+                     if (objectCreationDefaults.mass !== newValue) {
+                        objectCreationDefaults.mass = newValue;
+                    }
+                    updateObjectMassUI(objectCreationDefaults.mass);
+                    break;
+                case 'object-velocity':
+                case 'object-velocity-value':
+                    if (objectCreationDefaults.velocity !== newValue) {
+                        objectCreationDefaults.velocity = newValue;
+                    }
+                    updateObjectVelocityUI(objectCreationDefaults.velocity);
                     break;
                 case 'restitution':
+                case 'restitution-value':
+                    if (simulationCoreState.restitution !== newValue) {
+                        simulationCoreState.restitution = newValue;
+                    }
+                    updateRestitutionUI(simulationCoreState.restitution);
+                    break;
                 case 'friction':
+                case 'friction-value':
+                    if (simulationCoreState.friction !== newValue) {
+                        simulationCoreState.friction = newValue;
+                    }
+                    updateFrictionUI(simulationCoreState.friction);
+                    break;
+                case 'air-resistance':
+                case 'air-resistance-value':
+                     if (simulationCoreState.airResistance !== newValue) {
+                        simulationCoreState.airResistance = newValue;
+                    }
+                    updateAirResistanceUI(simulationCoreState.airResistance);
+                    break;
+                case 'fragment-multiplier':
+                case 'fragment-multiplier-value':
+                    if (simulationCoreState.fragmentMultiplier !== newValue) {
+                        simulationCoreState.fragmentMultiplier = newValue;
+                    }
+                    updateFragmentMultiplierUI(simulationCoreState.fragmentMultiplier);
+                    break;
+                case 'destruction-threshold':
+                case 'destruction-threshold-value':
+                    if (simulationCoreState.destructionThreshold !== newValue) {
+                        simulationCoreState.destructionThreshold = newValue;
+                    }
+                    updateDestructionThresholdUI(simulationCoreState.destructionThreshold);
                     break;
             }
         }
@@ -2292,19 +2745,16 @@
                 loadScenario(scenarioSelector.value);
             }
             
-            simulationState = 'PAUSED';
+            simulationCoreState.simulationState = 'PAUSED';
             const playPauseButton = document.getElementById('play-pause-button');
             if (playPauseButton) {
                 playPauseButton.textContent = 'Start Simulation';
                 playPauseButton.classList.add('paused');
             }
             
-            timeScale = 1.0;
-            slowMotionMode = false;
-            const timeScaleSlider = document.getElementById('time-scale');
-            const timeScaleValue = document.getElementById('time-scale-value');
-            if (timeScaleSlider) timeScaleSlider.value = 1.0;
-            if (timeScaleValue) timeScaleValue.value = 1.0;
+            simulationCoreState.timeScale = 1.0;
+            simulationCoreState.slowMotionMode = false;
+            updateTimeScaleUI(simulationCoreState.timeScale);
         }
 
         function loadScenario(scenarioName) {
@@ -2319,93 +2769,98 @@
 
         function setupEnhancedInteractions() {
             scene.onPointerDown = (evt, pickInfo) => {
-                if (interactionMode === 'ADD' && (!pickInfo.hit || !celestialBodies.includes(pickInfo.pickedMesh))) {
+                if (interactionState.interactionMode === 'ADD' && (!pickInfo.hit || !celestialBodies.includes(pickInfo.pickedMesh))) {
                     startDragging(pickInfo.pickedPoint);
-                } else if (interactionMode === 'SELECT' && pickInfo.pickedMesh && celestialBodies.includes(pickInfo.pickedMesh)) {
+                } else if (interactionState.interactionMode === 'SELECT' && pickInfo.pickedMesh && celestialBodies.includes(pickInfo.pickedMesh)) {
                     selectObject(pickInfo.pickedMesh);
                 }
             };
             
             scene.onPointerMove = (evt, pickInfo) => {
-                if (isDragging) {
+                if (interactionState.isDragging) {
                     updateDragging(pickInfo);
                 }
             };
             
             scene.onPointerUp = () => {
-                if (isDragging) {
+                if (interactionState.isDragging) {
                     finishDragging();
                 }
             };
         }
 
         function startDragging(startPoint) {
-            isDragging = true;
-            dragStartPosition = startPoint.clone();
+            if (!startPoint) {
+                logToScreen("Cannot start dragging: No valid start point picked.", "warn");
+                return;
+            }
+            interactionState.isDragging = true;
+            interactionState.dragStartPosition = startPoint.clone();
             
             const linePoints = [startPoint, startPoint];
-            dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, updatable: true }, scene);
-            dragLine.color = BABYLON.Color3.Yellow();
-            dragLine.renderingGroupId = 1;
+            interactionState.dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, updatable: true }, scene);
+            interactionState.dragLine.color = BABYLON.Color3.Yellow();
+            interactionState.dragLine.renderingGroupId = 1;
 
-            velocityArrow = BABYLON.MeshBuilder.CreateCylinder("velocityArrow", { height: 10, diameterTop: 0, diameterBottom: 5 }, scene);
-            velocityArrow.material = new BABYLON.StandardMaterial("arrowMat", scene);
-            velocityArrow.material.emissiveColor = BABYLON.Color3.Yellow();
-            velocityArrow.isVisible = false;
+            interactionState.velocityArrow = BABYLON.MeshBuilder.CreateCylinder("velocityArrow", { height: 10, diameterTop: 0, diameterBottom: 5 }, scene);
+            interactionState.velocityArrow.material = new BABYLON.StandardMaterial("arrowMat", scene);
+            interactionState.velocityArrow.material.emissiveColor = BABYLON.Color3.Yellow();
+            interactionState.velocityArrow.isVisible = false;
         }
 
         function updateDragging(pickInfo) {
-            if (!isDragging || !dragLine || !pickInfo.hit) return;
+            if (!interactionState.isDragging || !interactionState.dragLine || !pickInfo.hit) return;
             
             const currentPoint = pickInfo.pickedPoint;
-            const linePoints = [dragStartPosition, currentPoint];
-            dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, instance: dragLine }, scene);
+            if (!currentPoint) {
+                return;
+            }
 
-            const direction = currentPoint.subtract(dragStartPosition);
+            const linePoints = [interactionState.dragStartPosition, currentPoint];
+            interactionState.dragLine = BABYLON.MeshBuilder.CreateLines("dragLine", { points: linePoints, instance: interactionState.dragLine }, scene);
+
+            const direction = currentPoint.subtract(interactionState.dragStartPosition);
             const length = direction.length();
 
-            if (length > 1 && velocityArrow) {
-                velocityArrow.isVisible = true;
-                velocityArrow.position = dragStartPosition.add(direction.scale(0.5));
-                velocityArrow.scaling.y = length / 10;
-                velocityArrow.lookAt(currentPoint);
-                velocityArrow.rotation.x += Math.PI / 2;
+            if (length > 1 && interactionState.velocityArrow) {
+                interactionState.velocityArrow.isVisible = true;
+                interactionState.velocityArrow.position = interactionState.dragStartPosition.add(direction.scale(0.5));
+                interactionState.velocityArrow.scaling.y = length / 10;
+                interactionState.velocityArrow.lookAt(currentPoint);
+                interactionState.velocityArrow.rotation.x += Math.PI / 2;
             }
         }
 
         function finishDragging() {
-            if (!isDragging || !dragStartPosition) return;
+            if (!interactionState.isDragging || !interactionState.dragStartPosition) return;
 
-            const endPoint = scene.pick(scene.pointerX, scene.pointerY).pickedPoint || dragStartPosition;
-            const velocityVector = endPoint.subtract(dragStartPosition).scale(2);
-
-            const size = parseFloat(document.getElementById('object-size')?.value || 30);
-            const mass = parseFloat(document.getElementById('object-mass')?.value || 150);
+            const endPoint = scene.pick(scene.pointerX, scene.pointerY).pickedPoint || interactionState.dragStartPosition;
+            const velocityVector = endPoint.subtract(interactionState.dragStartPosition).scale(2);
 
             createEnhancedCelestialBody({
                 name: `Object_${Date.now()}`,
-                size: size,
-                mass: mass,
-                position: dragStartPosition,
+                size: objectCreationDefaults.size,
+                mass: objectCreationDefaults.mass,
+                position: interactionState.dragStartPosition,
                 velocity: velocityVector,
-                material: selectedMaterial
+                material: interactionState.selectedMaterial
             });
             
-            if (dragLine) dragLine.dispose();
-            if (velocityArrow) velocityArrow.dispose();
-            isDragging = false;
-            dragStartPosition = null;
+            if (interactionState.dragLine) interactionState.dragLine.dispose();
+            if (interactionState.velocityArrow) interactionState.velocityArrow.dispose();
+            interactionState.isDragging = false;
+            interactionState.dragStartPosition = null;
         }
 
         function selectObject(mesh) {
-            if (selectedObject) {
-                selectedObject.renderOutline = false;
+            if (interactionState.selectedObject) {
+                interactionState.selectedObject.renderOutline = false;
             }
             
-            selectedObject = mesh;
-            selectedObject.renderOutline = true;
-            selectedObject.outlineColor = BABYLON.Color3.FromHexString('#8fa8ff');
-            selectedObject.outlineWidth = 0.1;
+            interactionState.selectedObject = mesh;
+            interactionState.selectedObject.renderOutline = true;
+            interactionState.selectedObject.outlineColor = BABYLON.Color3.FromHexString('#8fa8ff');
+            interactionState.selectedObject.outlineWidth = 0.1;
             
             const mobileInfo = document.getElementById('selected-object-info');
             if (mobileInfo) {
@@ -2434,7 +2889,7 @@
         function updateModeDisplay() {
             const indicator = document.getElementById('mode-indicator');
             if (indicator) {
-                if (interactionMode === 'ADD') {
+                if (interactionState.interactionMode === 'ADD') {
                     indicator.textContent = 'Add Mode';
                     indicator.className = 'mode-indicator add';
                 } else {
@@ -2446,14 +2901,9 @@
         
         function setupCollisionDetection() {
             scene.onBeforeRenderObservable.add(() => {
-                if (simulationState !== 'RUNNING') return;
-                
-                // Clear trajectory lines
                 while(trajectoryLines.length) {
                     trajectoryLines.pop().dispose();
                 }
-
-                // Check for potential collisions between all celestial bodies
                 for (let i = 0; i < celestialBodies.length; i++) {
                     for (let j = i + 1; j < celestialBodies.length; j++) {
                         const body1 = celestialBodies[i];
@@ -2463,7 +2913,6 @@
                             if (body1.intersectsMesh(body2, false)) {
                                 CollisionSystem.handleCollision(body1, body2);
                             } else {
-                                // Draw trajectory line if bodies are approaching each other
                                 const v1 = body1.physicsImpostor.getLinearVelocity();
                                 const v2 = body2.physicsImpostor.getLinearVelocity();
                                 const pos1 = body1.position;
@@ -2472,7 +2921,7 @@
                                 const relativePos = pos2.subtract(pos1);
                                 const relativeVel = v2.subtract(v1);
 
-                                if (BABYLON.Vector3.Dot(relativePos, relativeVel) < 0) { // Approaching
+                                if (BABYLON.Vector3.Dot(relativePos, relativeVel) < 0) {
                                     const line = BABYLON.MeshBuilder.CreateLines(`traj_${i}_${j}`, {points: [pos1, pos2]}, scene);
                                     line.color = BABYLON.Color3.Red();
                                     line.alpha = 0.5;
@@ -2482,8 +2931,6 @@
                         }
                     }
                 }
-                
-                // Update analytics
                 updateRealTimeAnalysis();
             });
         }
@@ -2512,52 +2959,53 @@
         }
         
         function toggleSimulation() {
-            simulationState = (simulationState === 'PAUSED') ? 'RUNNING' : 'PAUSED';
-            const button = document.getElementById('play-pause-button');
-            if (button) {
-                button.textContent = (simulationState === 'PAUSED') ? 'Start Simulation' : 'Pause Simulation';
-                button.classList.toggle('paused', simulationState === 'PAUSED');
+            if (simulationCoreState.simulationState === 'RUNNING') {
+                simulationCoreState.timeScaleBeforePause = simulationCoreState.timeScale;
+                simulationCoreState.timeScale = 0.00001;
+                simulationCoreState.simulationState = 'PAUSED';
+                const button = document.getElementById('play-pause-button');
+                if (button) {
+                    button.textContent = 'Start Simulation';
+                    button.classList.add('paused');
+                }
+                logToScreen("Simulation PAUSED (physics timeScale near zero)", "info");
+            } else {
+                simulationCoreState.timeScale = (simulationCoreState.timeScaleBeforePause < 0.001 && simulationCoreState.timeScaleBeforePause !== 0) ? 1.0 : simulationCoreState.timeScaleBeforePause;
+                if (simulationCoreState.timeScale < 0.001) {
+                     simulationCoreState.timeScale = 1.0;
+                }
+                simulationCoreState.simulationState = 'RUNNING';
+                const button = document.getElementById('play-pause-button');
+                if (button) {
+                    button.textContent = 'Pause Simulation';
+                    button.classList.remove('paused');
+                }
+                logToScreen(`Simulation RUNNING (physics timeScale: ${simulationCoreState.timeScale.toFixed(2)})`, "info");
             }
-            
-            logToScreen(`Simulation ${simulationState.toLowerCase()}`, "info");
         }
 
         function toggleSlowMotion() {
-            slowMotionMode = !slowMotionMode;
-            const button = document.getElementById('slow-motion-btn');
-            if (slowMotionMode) {
-                timeScale = 0.1;
-                if (button) {
-                    button.style.background = 'linear-gradient(135deg, #ffd43b, #fab005)';
-                    button.textContent = 'Normal Speed';
-                }
+            simulationCoreState.slowMotionMode = !simulationCoreState.slowMotionMode;
+            if (simulationCoreState.slowMotionMode) {
+                simulationCoreState.timeScale = CONFIG.cinematicCamera.slowMotionTimeScale;
                 logToScreen("Slow motion activated (0.1x speed)", "info");
             } else {
-                timeScale = 1.0;
-                if (button) {
-                    button.style.background = '';
-                    button.textContent = 'Slow Motion';
-                }
+                simulationCoreState.timeScale = 1.0;
                 logToScreen("Normal speed restored", "info");
             }
-            
-            // Update slider
-            const slider = document.getElementById('time-scale');
-            const valueDisplay = document.getElementById('time-scale-value');
-            if (slider) slider.value = timeScale;
-            if (valueDisplay) valueDisplay.value = timeScale;
+            updateTimeScaleUI(simulationCoreState.timeScale);
         }
 
         function toggleInteractionMode() {
-            interactionMode = interactionMode === 'ADD' ? 'SELECT' : 'ADD';
+            interactionState.interactionMode = interactionState.interactionMode === 'ADD' ? 'SELECT' : 'ADD';
             updateModeDisplay();
             
             const canvas = document.getElementById('renderCanvas');
             if (canvas) {
-                canvas.className = interactionMode === 'SELECT' ? 'selection-mode' : '';
+                canvas.className = interactionState.interactionMode === 'SELECT' ? 'selection-mode' : '';
             }
             
-            logToScreen(`Switched to ${interactionMode} mode`, "info");
+            logToScreen(`Switched to ${interactionState.interactionMode} mode`, "info");
         }
         
         function initializeMaterialSelector() {
@@ -2565,36 +3013,35 @@
                 option.addEventListener('click', () => {
                     document.querySelectorAll('.material-option').forEach(opt => opt.classList.remove('selected'));
                     option.classList.add('selected');
-                    selectedMaterial = MaterialTypes[option.dataset.material];
+                    interactionState.selectedMaterial = MaterialTypes[option.dataset.material];
                     updateFracturePreview();
-                    logToScreen(`Selected material: ${selectedMaterial.name}`, "info");
+                    logToScreen(`Selected material: ${interactionState.selectedMaterial.name}`, "info");
                 });
             });
         }
 
         function updateFracturePreview() {
             const preview = document.getElementById('fracture-pattern-display');
-            if (!preview || !selectedMaterial) return;
+            if (!preview || !interactionState.selectedMaterial) return;
             
             preview.innerHTML = '';
-            preview.style.background = `radial-gradient(circle, ${selectedMaterial.color}20, transparent)`;
+            preview.style.background = `radial-gradient(circle, ${interactionState.selectedMaterial.color}20, transparent)`;
             
             const patternText = document.createElement('div');
             patternText.style.color = 'var(--text-secondary)';
             patternText.style.fontSize = '0.8em';
             patternText.style.textAlign = 'center';
-            patternText.textContent = `${selectedMaterial.name} - ${selectedMaterial.fracturePattern} pattern`;
+            patternText.textContent = `${interactionState.selectedMaterial.name} - ${interactionState.selectedMaterial.fracturePattern} pattern`;
             preview.appendChild(patternText);
             
-            // Add visual fracture pattern representation
-            const numDots = Math.floor((selectedMaterial.fragments.min + selectedMaterial.fragments.max) / 4);
+            const numDots = Math.floor((interactionState.selectedMaterial.fragments.min + interactionState.selectedMaterial.fragments.max) / 4);
             for (let i = 0; i < numDots; i++) {
                 const dot = document.createElement('div');
                 dot.style.position = 'absolute';
                 dot.style.width = '3px';
                 dot.style.height = '3px';
-                dot.style.background = selectedMaterial.color;
-                dot.style.borderRadius = selectedMaterial.fracturePattern === 'angular' ? '0' : '50%';
+                dot.style.background = interactionState.selectedMaterial.color;
+                dot.style.borderRadius = interactionState.selectedMaterial.fracturePattern === 'angular' ? '0' : '50%';
                 dot.style.top = `${20 + Math.random() * 60}%`;
                 dot.style.left = `${20 + Math.random() * 60}%`;
                 dot.style.opacity = '0.6';
@@ -2613,11 +3060,9 @@
         }
 
         function switchTab(tabId) {
-            // Remove active class from all tabs and buttons
             document.querySelectorAll('.mobile-tab-content').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.mobile-tab-btn').forEach(btn => btn.classList.remove('active'));
             
-            // Add active class to selected tab and button
             const selectedTab = document.getElementById(`${tabId}-tab`);
             const selectedButton = document.querySelector(`[onclick="switchTab('${tabId}')"]`);
             
@@ -2628,33 +3073,28 @@
         function startRenderLoop() {
             engine.runRenderLoop(() => {
                 if (scene) {
-                    // Update physics based on simulation state
-                    if (simulationState === 'RUNNING') {
+                    if (simulationCoreState.simulationState === 'RUNNING') {
                         const physicsEngine = scene.getPhysicsEngine();
                         if (physicsEngine) {
-                            physicsEngine.setGravity(new BABYLON.Vector3(0, -9.81 * gravityScale, 0));
-                            
-                            // Apply time scaling for slow motion
+                            physicsEngine.setGravity(new BABYLON.Vector3(0, -9.81 * simulationCoreState.gravityScale, 0));
                             const deltaTime = engine.getDeltaTime() / 1000;
-                            const scaledDeltaTime = deltaTime * timeScale;
-                            
+                            const scaledDeltaTime = deltaTime * simulationCoreState.timeScale;
                             if (physicsEngine.setTimeStep) {
                                 physicsEngine.setTimeStep(scaledDeltaTime);
                             }
                         }
-                        
-                        // Run collision detection
-                        CollisionSystem.detectCollisions();
+                    } else {
+                        const physicsEngine = scene.getPhysicsEngine();
+                         if (physicsEngine && physicsEngine.setTimeStep) {
+                            physicsEngine.setTimeStep(simulationCoreState.timeScale * (1/60));
+                        }
                     }
-                    
-                    // Always render the scene
                     scene.render();
                     updatePerformanceMonitor();
                 }
             });
         }
 
-        // Enhanced cleanup system for fragments
         function cleanupOldFragments() {
             const currentTime = Date.now();
             const fragmentsToRemove = [];
@@ -2675,14 +3115,10 @@
             }
         }
 
-        // Automatic fragment cleanup timer
-        setInterval(cleanupOldFragments, 5000); // Clean up every 5 seconds
+        setInterval(cleanupOldFragments, 5000);
 
-        // Enhanced error handling for physics engine
         function handlePhysicsError(error) {
             logToScreen(`Physics engine error: ${error.message}`, "error");
-            
-            // Attempt to restart physics if it fails
             if (scene && scene.getPhysicsEngine()) {
                 try {
                     scene.getPhysicsEngine().dispose();
@@ -2701,7 +3137,6 @@
             }
         }
 
-        // Window resize handler
         window.addEventListener('resize', () => {
             if (engine) {
                 engine.resize();
@@ -2709,16 +3144,13 @@
             }
         });
 
-        // Visibility change handler to pause simulation when tab is not visible
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden && simulationState === 'RUNNING') {
-                // Auto-pause when tab is hidden to save resources
+            if (document.hidden && simulationCoreState.simulationState === 'RUNNING') {
                 toggleSimulation();
                 logToScreen("Simulation auto-paused (tab hidden)", "info");
             }
         });
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', (event) => {
             switch(event.code) {
                 case 'Space':
@@ -2744,9 +3176,9 @@
                     }
                     break;
                 case 'Escape':
-                    if (selectedObject) {
-                        selectedObject.renderOutline = false;
-                        selectedObject = null;
+                    if (interactionState.selectedObject) {
+                        interactionState.selectedObject.renderOutline = false;
+                        interactionState.selectedObject = null;
                         const mobileInfo = document.getElementById('selected-object-info');
                         if (mobileInfo) mobileInfo.style.display = 'none';
                     }
@@ -2754,7 +3186,6 @@
             }
         });
 
-        // Touch handling for mobile devices
         let touchStartTime = 0;
         let touchStartPosition = null;
 
@@ -2771,21 +3202,18 @@
         document.addEventListener('touchend', (event) => {
             const touchDuration = Date.now() - touchStartTime;
             
-            // Long press detection (for mode switching on mobile)
             if (touchDuration > 500 && touchStartPosition) {
                 const canvas = document.getElementById('renderCanvas');
                 const rect = canvas.getBoundingClientRect();
                 const x = touchStartPosition.x - rect.left;
                 const y = touchStartPosition.y - rect.top;
                 
-                // Check if touch was on canvas
                 if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
                     toggleInteractionMode();
                 }
             }
         });
 
-        // Initialize the application
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 logToScreen("Initializing Enhanced Collision Simulator...", "info");
@@ -2801,7 +3229,6 @@
             } catch (error) {
                 logToScreen(`Fatal error during initialization: ${error.message}`, "error");
                 
-                // Show fallback error message
                 const fallbackError = document.createElement('div');
                 fallbackError.style.cssText = `
                     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -2821,7 +3248,6 @@
             }
         });
 
-        // Export global functions for HTML onclick handlers
         window.toggleMobileUI = toggleMobileUI;
         window.switchTab = switchTab;
         window.toggleSimulation = toggleSimulation;
